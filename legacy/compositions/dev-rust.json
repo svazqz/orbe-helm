@@ -1,0 +1,7 @@
+{
+  "sources": [
+    "BASE.md",
+    "profiles/developer.md",
+    "specializations/dev-rust.md"
+  ]
+}

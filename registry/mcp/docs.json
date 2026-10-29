@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "type": "http",
+  "url": "https://developers.openai.com/mcp",
+  "env": {}
+}

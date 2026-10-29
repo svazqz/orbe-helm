@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}MCP sign-in{% endblock %}
+{% block section %}PROJECT / MCP SIGN-IN{% endblock %}
+{% block body %}
+<div class="intro"><a class="text-link" href="/projects/{{ project.id }}?{{ {'tab': 'mcp', 'agent': job.agent, 'selection': job.selection or ''}|urlencode }}">← {{ project.name }} / MCP servers</a><h1>Sign in to {{ job.server }}</h1><p>Agent: <strong>{{ job.agent }}</strong> · Project: {{ project.name }}</p></div>
+<div class="card" role="status"><h2>{{ {'waiting': 'Complete sign-in in your browser', 'completed': 'Sign-in command completed', 'failed': 'Sign-in could not finish', 'expired': 'Sign-in timed out', 'cancelled': 'Sign-in cancelled'}[job.state] }}</h2>
+{% if job.state == 'waiting' %}<p>The agent's login command should open a browser window on this computer. Complete the provider's sign-in there, then refresh this page.</p><p class="muted">This attempt stops after three minutes. If no browser opens, cancel and use the agent's MCP login command in a terminal.</p><div class="actions"><a class="button" href="/projects/{{ project.id }}/mcp-login/{{ job.id }}">Refresh sign-in status</a><form method="post" action="/projects/{{ project.id }}/mcp-login/{{ job.id }}/cancel"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="secondary">Cancel sign-in</button></form></div>
+{% elif job.state == 'completed' %}<p>The agent's login command exited successfully. Return to MCP servers and check authentication to see what this runtime reports.</p>
+{% else %}<p>Your project configuration is unchanged. Return to the server and retry. If it fails again, check that the server supports OAuth and that your agent CLI supports this login flow.</p>{% endif %}
+</div><a class="button secondary" href="/projects/{{ project.id }}?{{ {'tab': 'mcp', 'agent': job.agent, 'selection': job.selection or ''}|urlencode }}">Return to MCP servers</a>
+{% endblock %}

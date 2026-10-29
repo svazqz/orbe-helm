@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Remove {{ name }}{% endblock %}
+{% block section %}{% if project %}PROJECT / {{ project.name }}{% else %}SHARED LIBRARY{% endif %} / REMOVAL{% endblock %}
+{% block body %}
+<div class="intro"><a class="text-link" href="{{ back }}">← {{ project.name if project else ('Skills' if kind == 'skills' else 'MCP servers') }}</a>
+<h1>{{ 'Remove project addition' if project else 'Remove from shared library' }}</h1><p><strong>{{ name }}</strong> · {{ 'Skill' if kind == 'skills' else 'MCP server' }}</p></div>
+<section class="card">
+{% if project %}
+<p>This removes the explicit addition from <strong>{{ project.name }}</strong>, across its profiles. It does not remove the shared registration or change other projects.</p>
+{% if references %}<div class="notice"><h2>It will still be required</h2><p>Removing the project addition leaves these inherited or dependent requirements in place:</p>
+<ul>{% for item in references %}<li>{% if item.href %}<a class="text-link" href="{{ item.href }}">{{ item.label }}</a>{% else %}{{ item.label }}{% endif %}</li>{% endfor %}</ul></div>
+{% else %}<p>No remaining requirement was found in the project's realized configurations. Other profiles may have their own inherited requirements.</p>{% endif %}
+{% else %}
+<p>This publishes a new shared library version without this registration. Previous versions and local skill source folders are retained.</p>
+{% if references %}<div class="notice"><h2>Removal blocked — item is in use</h2><p>Remove or replace these references first, then return here:</p><ul>{% for item in references %}<li><a class="text-link" href="{{ item.href }}">{{ item.label }}</a></li>{% endfor %}</ul></div>
+{% else %}<p>No current shared definition or active project configuration references this registration.</p>{% endif %}
+{% endif %}
+<p class="muted">History, credentials, and running orbes are preserved. Agent configuration changes take effect on the next launch or resume.</p>
+<div class="actions">{% if project or not references %}<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="expected" value="{{ expected }}"><button>{{ 'Remove project addition' if project else 'Remove from shared library' }}</button></form>{% endif %}<a class="button secondary" href="{{ back }}">{{ 'Cancel' if project or not references else 'Back' }}</a></div>
+</section>
+{% endblock %}

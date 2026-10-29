@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "instructions": [
+    "definitions/profiles/reviewer.md"
+  ],
+  "skills": [],
+  "mcp": []
+}

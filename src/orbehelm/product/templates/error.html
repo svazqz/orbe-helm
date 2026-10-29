@@ -1,0 +1,1 @@
+{% extends "base.html" %}{% block body %}<div class="intro"><p class="eyebrow">{{ status }}</p><h1>{{ 'Refresh before continuing' if status == 409 else 'Unable to apply this change' }}</h1><p>{{ error }}</p><p>Use your browser’s Back button to return to the form, or choose a project below.</p><a class="button secondary" href="/">Back to projects</a></div>{% endblock %}

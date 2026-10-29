@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "type": "stdio",
+  "command": "npx",
+  "args": [
+    "-y",
+    "@playwright/mcp@latest"
+  ],
+  "env": {}
+}

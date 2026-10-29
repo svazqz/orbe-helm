@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "instructions": [
+    "definitions/specializations/developer/python.md"
+  ],
+  "skills": [],
+  "mcp": []
+}

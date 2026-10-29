@@ -1,0 +1,30 @@
+# OrbeHelm user configuration. Copy to ~/.orbehelmrc, or select with --config.
+# CLI options override these defaults. No file is created by configuration reads.
+# Paths support ~; relative paths resolve against the directory of this file.
+# All supported defaults are listed below. Empty values mean no selection.
+[ORBEHELM]
+# Definitions checkout. If empty, use ORBEHELM_ROOT or the running checkout.
+root =
+# Supported agents: codex, claude, opencode.
+agent = codex
+profile = developer
+# Optional specialization belonging to the selected profile.
+spec =
+# Working project directory. Empty means the current working directory.
+project =
+# Comma-separated named bundles from definitions/skillsets/.
+skillsets =
+# Comma-separated names from [SKILLS] or registry/skills/.
+skills =
+# Exclusive context is not supported yet; true refuses a normal launch.
+# Override a configured true with --no-strict.
+strict = false
+
+# Skill aliases: public HTTPS GitHub folders, direct SKILL.md URLs, or local folders.
+# GitHub folder URLs install SKILL.md and its reference files/resources.
+# Generic HTTPS URLs install only SKILL.md. Installers never run skill scripts.
+# Missing selections install automatically on build or normal launch, not dry-run.
+# Prefer a commit-specific GitHub URL for reproducible upstream revisions.
+# An optional #sha256=<tree digest> URL fragment pins the full installed tree.
+[SKILLS]
+laravel = https://github.com/Jeffallan/claude-skills/tree/main/skills/laravel-specialist
