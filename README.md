@@ -34,9 +34,17 @@ ready. Agent CLIs and their authentication remain separate prerequisites.
 See [Installation](docs/installation.md) for shell support, custom paths, ports,
 reinstallation, and existing-data behavior.
 
+To update an installed application, stop the server and finish active orbes, pull
+the desired source revision, and run `./update.sh` from the clone. It refreshes the
+application and dependencies and runs migrations while retaining the installed port,
+runtime location, and local source edits. Then restart `oh server start`. Use
+`--install-dir` for a custom application location. See
+[the update workflow](docs/installation.md#updating-an-installed-application) for
+version selection and bundled definition update rules.
+
 ## Local management UI and project versions
 
-The full suite passes 133 automated tests on Python 3.13, including database
+The full suite passes 140 automated tests on Python 3.13, including database
 migrations, definition publication, selective project adoption/rollback, overrides,
 orbe launch history, task orchestration, memory, and HTTP form workflows. Validation used disposable
 state only; no real checkout migration or authenticated model conversation was performed.
@@ -228,12 +236,27 @@ instructions tell it to read these launch-time environment variables:
 | `ORBEHELM_PROFILE` | Selected profile |
 | `ORBEHELM_SPECIALIZATION` | Selected specialization, or an empty string for none |
 | `ORBEHELM_PROJECT` | Canonical absolute project path |
+| `ORBEHELM_AGENT_LABEL` | Profile, optional unique key, and optional specialization joined with ` - ` |
 
 Values are refreshed for every launch and override inherited values. Orbe IDs
 stay stable on reuse and change with `--new-orbe`. Orbe-specific values are
 not embedded in shared generated builds. The agent needs permitted access to its
 runtime environment to verify them; section overrides can replace the shared
 instructions. Dry runs do not allocate or export new orbe metadata.
+
+## Herdr agent labels
+
+Interactive launches inside the Herdr terminal automatically set the displayed
+agent label to `<PROFILE> - <UNIQUE-KEY> - <SPEC>`, omitting unavailable values.
+Examples: `developer - APP-123 - python`, `developer - python`, and `reviewer`.
+The integration requires `HERDR_ENV=1`, `HERDR_PANE_ID`, and `herdr` on PATH.
+It uses Herdr's [display metadata API](https://herdr.dev/docs/cli-reference/)
+without reporting or changing agent lifecycle state, renaming a workspace, or
+changing global settings. Herdr normalizes display text and limits it to 80 characters.
+OrbeHelm clears its display override when the interactive process exits. Headless
+delegations do not relabel the parent's pane. Missing or failing Herdr support does
+not block the agent launch; dry runs make no Herdr calls. Live Herdr rendering still
+requires integration verification on a machine running Herdr.
 
 ## User defaults and skill aliases
 

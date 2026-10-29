@@ -125,9 +125,8 @@ default: `/bin` is protected on macOS. The selected default is `~/bin/orbehelm`.
 
 Stop the server before rerunning setup from the clone with the same options.
 Reinstallation replaces application code and refreshes locked dependencies, while
-preserving installed definitions, registry entries, examples, database history,
-and orbe homes. Existing database upgrades make backups. Fresh bundled definition
-changes are not silently applied over customized installed definitions. Setup
+preserving database history and orbe homes. Existing database upgrades make backups.
+Bundled sources are updated using the rules below; local customizations are retained. Setup
 refuses an unmanaged nonempty application directory or a different orbe home for
 an existing installation. Changing storage paths requires a separate migration.
 
@@ -136,3 +135,55 @@ application environment or pip's available local sources. It does not bypass
 dependency checks. If setup fails after creating directories, fix the reported
 prerequisite and rerun it with the same options. PATH updates occur only after
 application initialization succeeds.
+
+## Updating an installed application
+
+Stop the foreground OrbeHelm server with Ctrl-C and finish active orbes before
+updating. In the source clone:
+
+```sh
+git pull --ff-only
+./update.sh
+```
+
+Then restart `oh server start`. Updates do not start the server or model sessions.
+For a custom application directory, pass it explicitly:
+
+```sh
+./update.sh --install-dir "$HOME/apps/orbehelm"
+```
+
+The updater requires an existing managed installation. It retains the recorded
+orbe-home location and server port unless explicitly overridden, leaves shell startup
+files unchanged, refreshes application code and locked dependencies, and runs database
+migrations and catalog initialization. It refuses to update while the installation's
+server address is reachable. Runtime directories are created idempotently by the same
+installer used for fresh setup. No separate global configuration is required.
+
+`update.sh` runs the update path shipped in the checked-out revision. It does not
+fetch code or choose a version. To install a particular release, check out its tag
+first, then use `./setup.sh` for a fresh installation or `./update.sh` for an existing
+one. These entry points are available in versions that include them. Both use the
+same installer and Alembic migration chain; future layout upgrade steps must be
+implemented there so upgrades and direct setup reach the same target layout.
+Database migrations support forward upgrades. Checking out older application code
+is not a supported database downgrade; restore a compatible backup into a separate
+installation if an older version is needed.
+
+Installation metadata records the application version and hashes of bundled files in
+`definitions/`, `registry/`, `examples/`, and `skills/` when present. Updates refresh
+unchanged bundled files, add new bundled files, and remove unchanged files retired
+upstream. Locally edited or deleted files and local additions are retained. Preserved
+files that differ from upstream are printed for manual review. Existing installations
+without recorded hashes preserve differing existing files on their first update,
+because their origin cannot be determined safely; new files are still installed.
+If a source revision removes a requirement that a local customization still uses,
+reconcile the reported sources and rerun the update if catalog validation fails.
+
+Database migration backups remain under the installation's `state/backups/`.
+Application/dependency replacement is not an atomic rollback transaction: failures
+return nonzero, keep the installation marked incomplete, and require fixing the
+reported problem and rerunning the script. Keep backups before switching versions.
+Published definition changes become available for adoption, but existing projects
+retain their pinned release; preview and apply updates separately in the UI or with
+`oh projects preview` and `oh projects update`.

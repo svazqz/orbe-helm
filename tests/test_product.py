@@ -775,6 +775,8 @@ class ProductTests(unittest.TestCase):
             resources = FileLinks(client.get('/definitions?category=resources').text).paths
             self.assertTrue(resources)
             self.assertTrue(all(path.startswith('examples/skills/') for path in resources))
+            self.assertNotIn('definitions/AGENTS.md', resources)
+            self.assertNotIn('definitions/CLAUDE.md', resources)
             self.assertEqual(client.get('/definitions?category=unknown').status_code, 404)
             selected_path = 'definitions/specializations/developer/python.md'
             response = client.get('/definitions', params={'path': selected_path})

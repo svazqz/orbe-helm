@@ -200,6 +200,17 @@ class OrbeHelmTests(unittest.TestCase):
         self.assertEqual(json.loads(data)["exit_code"], 7)
         self.assertFalse((home / "auth.json").exists())
 
+    def test_interactive_launch_passes_selection_label_to_herdr(self):
+        result = self.resolved(spec='python')
+        output, _ = build(self.root, result, 'claude')
+        with patch('orbehelm.adapters.doctor', return_value={'ok': True}), \
+                patch('orbehelm.adapters.subprocess.call', return_value=0) as child, \
+                patch('orbehelm.adapters.display_label') as display:
+            launch(self.root, output, result, 'claude', unique_key='APP-123')
+        display.assert_called_once_with('claude', 'developer - APP-123 - python')
+        self.assertEqual(child.call_args.kwargs['env']['ORBEHELM_AGENT_LABEL'],
+                         'developer - APP-123 - python')
+
     def test_sessions_reuse_runtime_and_resume_each_adapter(self):
         for agent in ("codex", "claude", "opencode"):
             result = self.resolved()

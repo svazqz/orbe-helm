@@ -17,6 +17,7 @@ from contextlib import contextmanager
 from .core import OrbeHelmError
 from .layout import auth_directory
 from .service import require_server
+from .herdr import agent_label, display_label
 from .compatibility import orbe_directory, orbe_slot, orbe_record, read_record
 
 AGENTS = ("codex", "claude", "opencode")
@@ -333,7 +334,8 @@ def launch(root, output, resolved, agent, prompt=None, dry_run=False, strict=Fal
                     "ORBEHELM_ORBE_DIR": str(orbe.resolve()),
                     "ORBEHELM_PROFILE": identity["profile"],
                     "ORBEHELM_SPECIALIZATION": identity["spec"] or "",
-                    "ORBEHELM_PROJECT": identity["project"]})
+                    "ORBEHELM_PROJECT": identity["project"],
+                    "ORBEHELM_AGENT_LABEL": agent_label(identity['profile'], unique_key, identity['spec'])})
         if coordination:
             env.update({'ORBEHELM_TASK_ID': coordination['task_id'], 'ORBEHELM_LOGICAL_ORBE_ID': actor_id,
                         'ORBEHELM_UNIQUE_KEY': coordination['unique_key'],
@@ -374,7 +376,8 @@ def launch(root, output, resolved, agent, prompt=None, dry_run=False, strict=Fal
             if headless:
                 code = run_child(args, workspace, env, cancel, timeout, on_start)
             else:
-                code = subprocess.call(args, cwd=workspace, env=env)
+                with display_label(agent, env['ORBEHELM_AGENT_LABEL']):
+                    code = subprocess.call(args, cwd=workspace, env=env)
             record.update(status="exited", exit_code=code, resumable=resume or code == 0)
         except KeyboardInterrupt:
             code = 130

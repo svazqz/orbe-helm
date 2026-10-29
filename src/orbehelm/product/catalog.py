@@ -22,6 +22,9 @@ def collect_catalog(root, edits=None, additions=None, removals=()):
         for path in sorted((root / directory).rglob("*")):
             if path.name == ".DS_Store":
                 continue
+            # Agent authoring guides are checkout documentation, not runtime definitions.
+            if path.relative_to(root).as_posix() in {'definitions/AGENTS.md', 'definitions/CLAUDE.md'}:
+                continue
             if path.is_symlink():
                 raise OrbeHelmError(f"Source symlink is not supported: {path}")
             if path.is_file():

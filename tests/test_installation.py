@@ -22,6 +22,7 @@ from orbehelm.core import OrbeHelmError, build, resolve
 from orbehelm.delegation_runner import execute_delegation
 from orbehelm.installer import path_block, startup_files, update_startup, write_manifest
 from orbehelm.installer import main as setup_main
+from orbehelm.installer import sync_bundled_sources
 from orbehelm.layout import auth_directory, runtime_base, stored_runtime, identity
 from orbehelm.product.commands import initialize
 from orbehelm.product.database import Store
@@ -238,9 +239,14 @@ class InstallationTests(unittest.TestCase):
         record.write_text(json.dumps({'orbe_id': record.parent.name, 'cwd': str(self.work),
             'agent': 'codex', 'profile': 'developer', 'status': 'exited'}))
         original = record.read_bytes()
-        result = subprocess.run(command, env=env, cwd=self.work, capture_output=True, text=True)
+        update_command = [str(REPO / 'update.sh'), '--install-dir', str(destination), '--offline']
+        result = subprocess.run(update_command, env=env, cwd=self.work, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(rc.read_bytes(), first_rc)
+        metadata = json.loads((destination / 'installation.json').read_text())
+        self.assertEqual(metadata['orbes_home'], str(home))
+        self.assertEqual(metadata['server_url'], 'http://127.0.0.1:49871')
+        self.assertTrue(metadata['complete'])
         self.assertIn('Keep this customization.', definition.read_text())
         self.assertEqual(record.read_bytes(), original)
         version = subprocess.run([str(launcher), '--version'], env=env, cwd=self.work,
@@ -262,6 +268,44 @@ class InstallationTests(unittest.TestCase):
             env={**os.environ, 'ORBEHELM_PYTHON': sys.executable}, cwd=self.work, capture_output=True, text=True)
         self.assertNotEqual(failed.returncode, 0)
         self.assertIn('not an OrbeHelm installation', failed.stderr)
+
+    def test_update_requires_existing_installation_before_creating_files(self):
+        destination = self.home / 'missing'
+        with contextlib.redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(setup_main(['--update', '--install-dir', str(destination)]), 1)
+        self.assertIn('run setup.sh first', error.getvalue())
+        self.assertFalse(destination.exists())
+
+    def test_bundled_updates_preserve_customizations_and_refresh_unchanged_files(self):
+        source, target = self.base / 'source', self.base / 'target'
+        (source / 'definitions').mkdir(parents=True)
+        target.mkdir()
+        for name in ('unchanged', 'customized', 'removed', 'deleted', 'script'):
+            (source / 'definitions' / name).write_text('original')
+        baseline = sync_bundled_sources(source, target, None)
+        (target / 'definitions/customized').write_text('local edit')
+        (target / 'definitions/deleted').unlink()
+        (target / 'definitions/local-only').write_text('local addition')
+        for name in ('unchanged', 'customized', 'deleted'):
+            (source / 'definitions' / name).write_text('upstream edit')
+        (source / 'definitions/removed').unlink()
+        (source / 'definitions/new').write_text('upstream addition')
+        (source / 'definitions/script').chmod(0o755)
+        with contextlib.redirect_stdout(io.StringIO()) as report:
+            sync_bundled_sources(source, target, {'bundled_sources': baseline})
+        self.assertEqual((target / 'definitions/unchanged').read_text(), 'upstream edit')
+        self.assertEqual((target / 'definitions/customized').read_text(), 'local edit')
+        self.assertFalse((target / 'definitions/deleted').exists())
+        self.assertFalse((target / 'definitions/removed').exists())
+        self.assertEqual((target / 'definitions/new').read_text(), 'upstream addition')
+        self.assertEqual((target / 'definitions/local-only').read_text(), 'local addition')
+        self.assertTrue((target / 'definitions/script').stat().st_mode & 0o111)
+        self.assertIn('customized', report.getvalue())
+        # Pre-tracking installations retain files whose origin cannot be established.
+        (target / 'definitions/unchanged').write_text('unknown old source')
+        with contextlib.redirect_stdout(io.StringIO()):
+            sync_bundled_sources(source, target, {})
+        self.assertEqual((target / 'definitions/unchanged').read_text(), 'unknown old source')
 
     def test_setup_reports_missing_venv_before_creating_an_installation(self):
         destination = self.home / 'bin/orbehelm'
