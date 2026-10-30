@@ -2,6 +2,8 @@
   "schema_version": 1,
   "baseline_tests": 159,
   "cli_commands": [
+    "close",
+    "prune",
     "run",
     "chat",
     "conversations",
@@ -568,6 +570,16 @@
       "effects": "read/write",
       "replacement_suite": "tests/memory",
       "test_group": "conversations"
+    },
+    {
+      "command": "close",
+      "test_group": "resolver",
+      "replacement_suite": "tests/test_session_control.py"
+    },
+    {
+      "command": "prune",
+      "test_group": "resolver",
+      "replacement_suite": "tests/test_session_control.py"
     }
   ],
   "operation_contracts": [

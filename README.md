@@ -222,3 +222,24 @@ oh --agent=codex --no-memory       # Native interactive launch
 
 With memory disabled, ask the agent to reread `ORBEHELM_INSTRUCTIONS_FILE` after
 updating definitions. See [memory modes](docs/knowledge-memory.md#optional-native-continuity).
+
+## Close and prune sessions
+
+```sh
+oh close                              # latest running session in the current project
+oh close --project /path/to/project   # latest running session in another project
+oh close ORBE_ID                      # one orbe, across this installation
+oh close --all --project /path/to/project
+oh close --global                     # every project in this installation
+oh prune PROJECT_ID                   # delete all native orbes in this project
+oh prune --global                     # delete native orbes across projects
+```
+
+Closing stops the launcher and its verified descendants and retains native history.
+Pruning first closes the selected sessions, lists their IDs, and requires typing
+`DELETE`. It deletes their native runtime homes, launch records, and active pointers.
+Project definitions, tasks, conversation events, and typed knowledge are retained.
+`--dry-run` previews either operation without signaling processes or deleting data.
+Use `oh projects list` and `oh orbes list` to find IDs. Global scope covers only the
+installation selected by `--root`; it does not affect independent installations.
+Older active launchers require `lsof` to verify ownership before receiving signals.

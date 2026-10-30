@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.0a2 — 2026-10-30
+
+- Add `oh close [ORBE_ID]`, `oh close --all`, and `oh close --global`. Bare
+  `close` stops the most recently launched running orbe in the selected project.
+- Add confirmed `oh prune PROJECT_ID` and `oh prune --global` to stop selected
+  sessions and delete their native homes and launch records. Project definitions,
+  conversation events, tasks, and typed knowledge remain available.
+- Track launcher process birth identities and stop verified descendant processes;
+  legacy launchers require live lock ownership verification through `lsof`.
+- Both commands support `--dry-run`. Global scope is the selected installation.
+- No schema migration is required; database head remains `0006`.
+
 ## orbehelm-alpha — 0.1.0a1 — 2026-10-30
 
 First named alpha release. Annotated Git tag: `orbehelm-alpha`.

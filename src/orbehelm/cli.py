@@ -19,7 +19,8 @@ from .application import execute
 
 def parser():
     p = argparse.ArgumentParser(prog="oh", description="OrbeHelm: compose agent profiles and launch persistent orbes.")
-    p.add_argument("command", nargs="?", default="run", choices=["run", "chat", "conversations", "orbes", "get", "add", "remove", "override", "reset", "set", "history", "diff", "rollback", "resolve", "build", "doctor", "list", "skills", "status", "auth", "migrate", "web", "server", "projects", "definitions", "tasks", "memory", "mcp-serve", "memory-serve"])
+    p.add_argument("command", nargs="?", default="run", choices=["close", "prune", "run", "chat", "conversations", "orbes", "get", "add", "remove", "override", "reset", "set", "history", "diff", "rollback", "resolve", "build", "doctor", "list", "skills", "status", "auth", "migrate", "web", "server", "projects", "definitions", "tasks", "memory", "mcp-serve", "memory-serve"])
+    p.add_argument("--all", dest="all_sessions", action="store_true", help="close all sessions in the selected project")
     p.add_argument("action", nargs="?", help="skills: list or install")
     p.add_argument("name", nargs="?", help="skill identifier for skills install")
     p.add_argument("--host", help="local server bind address; defaults to the installation URL")
@@ -92,6 +93,44 @@ def main(argv=None):
             if getattr(args, name) is None:
                 setattr(args, name, defaults.get("skillsets" if name == "skillset" else name, value))
         root = Path(args.root or os.environ.get("ORBEHELM_ROOT") or os.environ.get("AGENTIC_ROOT") or defaults.get("root") or Path(__file__).resolve().parents[2]).expanduser().resolve()
+        if args.all_sessions and args.command != 'close':
+            raise OrbeHelmError('--all applies only to close; use prune PROJECT_ID or prune --global')
+        if args.command in {'close', 'prune'}:
+            from .session_control import close, selected, prune
+            from .application import storage
+            if args.name or (args.global_scope and (args.action or args.all_sessions)):
+                raise OrbeHelmError('Use close [ORBE_ID]|--all|--global or prune PROJECT_ID|--global')
+            if args.command == 'close' and args.action and args.all_sessions:
+                raise OrbeHelmError('Choose an orbe ID or --all')
+            if args.command == 'prune' and (args.all_sessions or (not args.action and not args.global_scope)):
+                raise OrbeHelmError('Use prune PROJECT_ID or prune --global')
+            with storage(root) as store:
+                if args.command == 'close':
+                    if args.dry_run:
+                        rows = selected(store, args.project, args.action, args.global_scope)
+                        from .session_control import running
+                        if not (args.action or args.all_sessions or args.global_scope):
+                            rows = [row for row in rows if running(store, row)][:1]
+                        emit({'would_close': [row.id for row in rows]})
+                    else:
+                        results = close(store, args.project, args.action, args.all_sessions, args.global_scope)
+                        emit(results)
+                        if any(item['status'] == 'error' for item in results):
+                            return 2
+                else:
+                    rows = selected(store, args.action, global_scope=args.global_scope)
+                    emit({'scope': 'global' if args.global_scope else args.action,
+                          'would_prune': [row.id for row in rows]})
+                    if args.dry_run or not rows:
+                        return 0
+                    try:
+                        answer = input('Delete these native homes and orbe launch records? Type DELETE to confirm: ')
+                    except EOFError:
+                        answer = ''
+                    if answer != 'DELETE':
+                        raise OrbeHelmError('Prune cancelled; confirmation required')
+                    emit(prune(store, rows))
+            return 0
         if args.command in {'get', 'add', 'remove', 'override', 'reset', 'set', 'history', 'diff', 'rollback'}:
             if not args.action or args.name:
                 raise OrbeHelmError('Supply one typed definition target')

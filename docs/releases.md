@@ -1,5 +1,10 @@
 # OrbeHelm releases
 
+## Current release
+
+Version `0.1.0a2`, tag `v0.1.0-alpha.2`, adds close/prune lifecycle commands.
+Database head remains `0006`; no additional migration is required.
+
 ## First release identity
 
 | Field | Value |

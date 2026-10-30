@@ -16,6 +16,9 @@ from .projects import register_project
 
 
 def begin_launch(store, result, agent, orbe_id, runtime, key, unique_key=''):
+    from orbehelm.infrastructure.process.lifecycle import remember_process
+    from orbehelm.layout import runtime_child
+    remember_process(runtime_child(store.root, "processes"), orbe_id)
     with store.write() as db:
         slot = db.get(OrbeSlot, key)
         if slot is None:

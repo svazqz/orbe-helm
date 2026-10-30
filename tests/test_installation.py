@@ -252,7 +252,8 @@ class InstallationTests(unittest.TestCase):
         self.assertEqual(record.read_bytes(), original)
         version = subprocess.run([str(launcher), '--version'], env=env, cwd=self.work,
             capture_output=True, text=True, check=True)
-        self.assertIn('0.1.0a1', version.stdout)
+        from orbehelm import __version__
+        self.assertIn(__version__, version.stdout)
         stopped = subprocess.run([str(launcher), '--project', str(self.work), '--agent=missing'], env=env,
             cwd=self.work, capture_output=True, text=True)
         self.assertEqual(stopped.returncode, 2)
