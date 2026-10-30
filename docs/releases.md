@@ -1,11 +1,11 @@
 # Release process
 
-Current package version: `0.1.0a3`; release tag: `v0.1.0-alpha.3`; schema head: `0006`.
+Current package version: `0.1.0a4`; release tag: `v0.1.0-alpha.4`; schema head: `0006`.
 The permanent first-release tag `orbehelm-alpha` identifies `0.1.0a1` and must never move.
 
-Optional local embeddings currently require Python 3.13 with the shipped lock;
-Python 3.11 resolution fails at NumPy 2.5.4. This alpha documents that known limitation
-rather than including the unreviewed compatibility draft.
+Version 0.1.0a4 resolves the Python 3.11 optional-memory installation limitation
+from alpha 3. The optional dependency lock and binary runtime are checked on both
+Python 3.11 and 3.13 on Linux/macOS. Model downloads remain opt-in.
 
 ## Prepare a candidate
 
@@ -51,6 +51,7 @@ blindly running old code on a newer schema.
 ## Version history
 
 - `orbehelm-alpha`: package `0.1.0a1`, first immutable named alpha snapshot.
+- `v0.1.0-alpha.4`: package `0.1.0a4`, Python 3.11 optional-memory compatibility fix, schema `0006`.
 - `v0.1.0-alpha.3`: package `0.1.0a3`, staged updates and development/release gates, schema `0006`.
 - `v0.1.0-alpha.2`: package `0.1.0a2`, close/prune lifecycle commands, schema `0006`.
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orbehelm"
-version = "0.1.0a3"
+version = "0.1.0a4"
 description = "Compose reusable agent profiles and manage persistent orbes"
 requires-python = ">=3.11"
 dependencies = [

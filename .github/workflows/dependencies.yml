@@ -11,11 +11,12 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
+        python: ['3.11', '3.13']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: ${{ matrix.python }}
       - run: python -m pip install -r requirements-dev.lock
       - run: python scripts/dev.py audit
       - name: Resolve optional model dependencies for this platform
@@ -26,6 +27,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: dependencies-${{ runner.os }}-${{ github.sha }}
+          name: dependencies-${{ runner.os }}-py${{ matrix.python }}-${{ github.sha }}
           path: state/verification/
           if-no-files-found: warn

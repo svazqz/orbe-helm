@@ -26,7 +26,9 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install reviewed dependency pins
-        run: python3 -m pip install -r requirements-dev.lock
+        run: python3 -m pip install --require-hashes -r requirements-dev.lock -r requirements-memory.lock
+      - name: Check optional memory runtime without model downloads
+        run: python3 scripts/check_memory_runtime.py
       - name: Full regressions, architecture, migrations, and provider contracts
         run: python3 scripts/dev.py check
       - name: Build distribution and verify independent installed imports

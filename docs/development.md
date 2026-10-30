@@ -15,7 +15,9 @@ python3 scripts/dev.py bootstrap
 
 `bootstrap` installs reviewed development dependencies into `.venv`. `fast` checks
 the independent kernel, incremental lint/format/type scopes, release metadata and
-shell syntax. `check` adds dependency consistency, all unittests and branch coverage.
+shell syntax. `check` adds dependency consistency, all unittests and branch coverage. CI also
+installs the optional-memory lock and executes `scripts/check_memory_runtime.py`
+on Linux/macOS with Python 3.11 and 3.13, without downloading models.
 `release` adds source/wheel builds, installed-import/migration checks and SHA256SUMS.
 It does not commit, tag, update the live installation or publish anything. Run it
 with a clean intended candidate before release. Evidence is inside
@@ -87,7 +89,9 @@ export PIP_TOOLS_CACHE_DIR="$PWD/state/tool-cache/pip-tools"
 ```
 
 Review upgrades in a focused PR: package ranges, runtime/core pins, optional model
-resolution, install/upgrade tests and both platform CI results. Do not assume a local
+resolution, install/upgrade tests and both platform CI results. The shared optional
+resolution constrains NumPy below 2.5 to retain Python 3.11 support; do not regenerate
+it using only the newest interpreter without running the complete compatibility matrix. Do not assume a local
 resolution proves identical dependencies on every platform. The scheduled dependency
 workflow audits resolved runtime/development/memory dependencies and retains Linux/macOS optional-memory resolutions;
 it does not automatically modify source or merge upgrades. Vulnerabilities require
@@ -124,7 +128,7 @@ cache. Download is explicit and potentially substantial:
 ```
 
 The manually triggered Optional local model integration workflow runs these same
-checks on Linux/macOS; configure the optional-integrations environment for operator
+checks on Linux/macOS and Python 3.11/3.13; configure the optional-integrations environment for operator
 approval before its explicit public model download. These checks use disposable
 stores/models, not the active installation. The memory
 entry point rejects a live agent binding. They do not start an authenticated model.

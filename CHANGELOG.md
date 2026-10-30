@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.0a4 — 2026-10-30
+
+- Fix optional-memory installation on Python 3.11 by constraining NumPy below 2.5
+  and regenerating the complete hash-checked optional dependency resolution.
+- Install and check optional memory binaries in ordinary Linux/macOS CI on Python
+  3.11 and 3.13, without downloading a model.
+- Expand opt-in real-model and scheduled dependency workflows to both interpreters.
+- The Python 3.11 optional-memory lock limitation documented in 0.1.0a3 is resolved.
+  Database head remains `0006`; no schema migration is required.
+- After changing an existing embedding runtime's dependencies, run the operator
+  `oh memory configure` command to refresh its model/runtime fingerprint explicitly.
+
 ## 0.1.0a3 — 2026-10-30
 
 - Stage and validate a separate application environment before update activation;

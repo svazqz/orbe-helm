@@ -1,3 +1,5 @@
 # Resolve with pip-tools on each supported target; public model weights are separate.
 -r requirements.lock
 fastembed==0.9.1
+# NumPy 2.5 drops Python 3.11; one lock must support both tested interpreters.
+numpy<2.5

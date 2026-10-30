@@ -25,9 +25,10 @@ terminal for maintenance. Do not remove a binding to bypass this boundary.
 
 ## Enable semantic retrieval
 
-Release 0.1.0a3: use Python 3.13 for the optional embedding runtime. The shipped
-optional lock cannot resolve on Python 3.11 because of its NumPy 2.5.4 pin. This
-does not prevent keyword-only memory without the optional extra.
+Release 0.1.0a4 fixes the Python 3.11 optional-memory lock issue from 0.1.0a3.
+The shared optional lock constrains NumPy below 2.5 and is checked on Python 3.11
+and 3.13. Ordinary CI installs the optional dependencies and checks their binary
+runtime without downloading models; real-model integration remains explicit.
 
 Finish active OrbeHelm sessions and stop the optional editor before updating. Select
 the reviewed checkout/tag you intend to install; update includes local source changes.

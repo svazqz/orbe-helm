@@ -10,11 +10,12 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
+        python: ['3.11', '3.13']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: ${{ matrix.python }}
       - run: python -m pip install -r requirements-dev.lock -r requirements-memory.lock
       - name: Explicitly download public test model
         run: python tests/check_embedding_model.py --download
@@ -23,7 +24,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: memory-${{ runner.os }}-${{ github.sha }}
+          name: memory-${{ runner.os }}-py${{ matrix.python }}-${{ github.sha }}
           path: |
             state/verification/knowledge-memory/real-model/settings.json
             state/verification/development/
