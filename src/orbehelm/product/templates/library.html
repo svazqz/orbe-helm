@@ -3,11 +3,11 @@
 {% block section %}SHARED LIBRARY{% endblock %}
 {% block body %}
 <div class="intro"><div class="section-heading"><div><h1>{{ 'Skills' if kind == 'skills' else 'MCP servers' }}</h1><p class="muted">{{ 'Reusable instructions and resources for your agents.' if kind == 'skills' else 'Tools and services your agents can connect to.' }}</p></div><a class="button" href="/{{ kind }}/new">Add {{ 'skill' if kind == 'skills' else 'MCP server' }}</a></div></div>
-{% if added %}<p class="notice" role="status"><strong>{{ added }} added.</strong> Open a project, review its updates, and enable this item in the {{ 'Skills' if kind == 'skills' else 'MCP servers' }} tab.</p>{% endif %}
+{% if added %}<p class="notice" role="status"><strong>{{ added }} added.</strong> Enable it through a shared definition or oh projects add-skill / add-mcp.</p>{% endif %}
 {% if removed %}<p class="notice" role="status"><strong>{{ removed }}</strong> removed from the shared library. Historical versions, credentials, and running orbes were preserved.</p>{% endif %}
 <p class="workflow-hint">1. Add to the shared library → 2. Open a project → 3. Apply library updates → 4. Enable it there.</p>
 <div class="project-grid">{% for item in items %}<article class="card"><span class="tag">{{ 'SKILL' if kind == 'skills' else 'MCP SERVER' }}</span><h2>{{ item.name }}</h2>
 {% if kind == 'skills' %}<p class="path">{{ item.config.source }}</p><p class="muted">{{ item.config.get('skills', [])|length }} skill dependencies · {{ item.config.get('mcp', [])|length }} MCP dependencies</p>{% else %}<p>{{ 'Remote HTTP server' if item.config.type == 'http' else 'Local server' }}</p><p class="path">{{ item.config.url if item.config.type == 'http' else item.config.command }}</p>{% endif %}
 <a class="link" href="/definitions?{{ {'path': item.path}|urlencode }}">Edit registration →</a><a class="text-link" href="/{{ kind }}/{{ item.name }}/remove">Review usage &amp; remove</a></article>{% else %}<div class="empty"><h2>Your library is empty</h2><p>Add your first {{ 'skill' if kind == 'skills' else 'MCP server' }} to make it available to projects.</p></div>{% endfor %}</div>
-<p class="muted">Library version {{ release.sequence }}. <a class="text-link" href="/">Choose a project →</a></p>
+<p class="muted">Library version {{ release.sequence }}. <a class="text-link" href="/releases/{{ release.id }}">Shared history →</a></p>
 {% endblock %}

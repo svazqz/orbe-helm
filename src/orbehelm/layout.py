@@ -40,11 +40,24 @@ def auth_directory(root):
     return runtime_base(root) / 'auth' / 'codex'
 
 
+def runtime_child(root, *parts):
+    """Construct a runtime path without following user-created directory symlinks."""
+    relative = Path(*parts)
+    if relative.is_absolute() or '..' in relative.parts:
+        raise OrbeHelmError('Invalid runtime path')
+    path = runtime_base(root)
+    for part in relative.parts:
+        path = path / part
+        if path.is_symlink():
+            raise OrbeHelmError('Runtime directories must not be symlinks')
+    return path
+
+
 def stored_runtime(root, value):
     """Runtime homes may be external; generated build paths must still stay in root."""
     path = Path(value).resolve()
     base = runtime_base(root).resolve()
-    if not any(path.is_relative_to(base / name) for name in ('orbes', 'sessions')):
+    if not any(path.is_relative_to(base / name) for name in ('orbes', 'sessions', 'conversations')):
         raise OrbeHelmError('Orbe runtime is outside this installation storage')
     return path
 

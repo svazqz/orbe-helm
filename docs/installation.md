@@ -6,6 +6,11 @@ Install from a clone on macOS or Linux:
 ./setup.sh
 ```
 
+Add `--memory` to setup/update to install the optional local embedding runtime.
+`oh memory configure --download-model` then explicitly downloads the public model
+into application storage. Normal setup/update does not download weights or start
+an agent. See [knowledge memory](knowledge-memory.md) for visibility and retrieval.
+
 The installer requires Python 3.11 or later. It detects a suitable `python3`,
 `python3.13`, `python3.12`, or `python3.11`; set `ORBEHELM_PYTHON` to select a
 specific executable. It checks `venv` and `ensurepip`, creates a private application
@@ -59,52 +64,31 @@ files or start the server.
 Use `--shell zsh`, `--shell bash`, or another supported shell to override detection;
 use `--no-path` to manage PATH yourself.
 
-## Starting the server and creating orbes
+## CLI work and the optional editor
 
-In one terminal:
-
-```sh
-oh server start
-```
-
-The server stays in the foreground. Open `http://127.0.0.1:8765` for the management
-UI and use Ctrl-C to stop it. `oh web` remains an equivalent foreground server
-command. No daemon, launch agent, cron job, or automatic server startup is installed.
-
-In another terminal:
+After setup, launch without starting a server:
 
 ```sh
-oh server status
-# Install the chosen agent CLI separately. Codex authentication is explicit:
-oh auth --agent=codex
-cd /path/to/project
-oh --agent=codex --profile=developer --spec=python
-# Add a stable task key to enable shared memory and reviewer/QA orchestration:
-oh --agent=codex --profile=developer --spec=python --unique-key=APP-123
+oh chat --agent=claude --project=/path/to/project --unique-key=APP-123
+# Or keep the agent's native interface:
+oh --agent=claude --profile=developer --spec=python --project=/path/to/project
 ```
 
-Real launches check `/healthz` before project registration, catalog publication,
-building, or logical-orbe creation. The adapter checks again before allocating a
-runtime, and delegation checks before allocating its child. The response must
-identify this application root, this orbe-storage location, the same version and
-protocol, a readable current database schema, and a published catalog. A random
-listener on the port or another OrbeHelm installation does not satisfy readiness.
-If the check fails, the command explains how to start the server and does not
-start an orbe or authenticated model process.
+Agent CLIs, provider access, MCP executables, and sign-in remain separate prerequisites.
+Codex login is explicit with `oh auth --agent=codex`; Claude/OpenCode use their native
+flows. No authenticated model session starts during setup/update. Native isolation
+retains the documented limitations.
 
-The server is a prerequisite, while task state still uses the local SQLite and
-stdio MCP architecture. A readiness check is not a permanent service lease:
-stopping the server does not terminate an already running native conversation;
-new launches and subsequent child delegations are blocked until it returns.
+The service accesses the local database directly. Incomplete installations and old
+schemas fail with setup/update/migrate guidance; no web listener is checked. Native
+read-only resolve/doctor/dry runs require prior project registration in product mode.
+Managed `chat --dry-run` is a write-free plan and requires no registered project.
 
-`oh server status` exits 0 when ready and 1 when unavailable or mismatched. Its JSON
-includes the expected URL. Dry runs, configuration inspection, builds, authentication,
-and other read-only diagnostics do not require a running server. A product-mode dry
-run still requires prior project registration because it cannot register by writing.
-
-Agent CLIs, provider access, MCP executables, and any required sign-in remain separate
-prerequisites. OrbeHelm does not install those tools or start authenticated model
-sessions during setup. Adapter isolation retains the documented alpha limitations.
+`oh web` optionally starts a loopback shared-definition editor at
+`http://127.0.0.1:8765`; `oh server start` remains an alias. The editor stays in the
+foreground and stops with Ctrl-C. It has no project/task/orbe management routes.
+`server status` describes editor availability, not CLI readiness. No daemon or automatic
+server startup is installed.
 
 ## Options and reinstallation
 
@@ -146,7 +130,7 @@ git pull --ff-only
 ./update.sh
 ```
 
-Then restart `oh server start`. Updates do not start the server or model sessions.
+CLI work can resume immediately. Restart `oh web` only if you want the optional editor. Updates start no model sessions.
 For a custom application directory, pass it explicitly:
 
 ```sh
@@ -170,6 +154,11 @@ Database migrations support forward upgrades. Checking out older application cod
 is not a supported database downgrade; restore a compatible backup into a separate
 installation if an older version is needed.
 
+This includes uncommitted local application changes: running update from this
+development checkout installs those changes too. The first named release candidate
+is `orbehelm-alpha` (`0.1.0a1`, schema `0006`); its tag is not published merely by
+running setup/update. See [release/tag policy](releases.md).
+
 Installation metadata records the application version and hashes of bundled files in
 `definitions/`, `registry/`, `examples/`, and `skills/` when present. Updates refresh
 unchanged bundled files, add new bundled files, and remove unchanged files retired
@@ -184,6 +173,8 @@ Database migration backups remain under the installation's `state/backups/`.
 Application/dependency replacement is not an atomic rollback transaction: failures
 return nonzero, keep the installation marked incomplete, and require fixing the
 reported problem and rerunning the script. Keep backups before switching versions.
-Published definition changes become available for adoption, but existing projects
-retain their pinned release; preview and apply updates separately in the UI or with
-`oh projects preview` and `oh projects update`.
+Published shared changes automatically apply to every project's next launch. Local
+file replacements remain in effect until reset. Source-only project revisions are
+created without rebuilding or contacting remote dependencies. Running conversations
+retain their captured configuration; managed chat checks rules between turns.
+See [conversation memory](conversation-memory.md) for cross-agent history and policy refresh.

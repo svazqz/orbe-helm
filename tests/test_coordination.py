@@ -197,23 +197,23 @@ class CoordinationTests(unittest.TestCase):
         output, _ = build_project(self.store, resolved, 'codex')
         other = ensure_orbe(self.store, self.project, 'APP-125', 'developer', spec='python')
         def nested(*args, **kwargs):
-            with self.assertRaisesRegex(OrbeHelmError, 'Another keyed developer'):
+            with self.assertRaisesRegex(OrbeHelmError, 'Another developer'):
                 launch(self.root, output, resolved, 'codex', unique_key='APP-125', actor_id=other)
             return 0
         with patch('orbehelm.adapters.doctor', return_value={'ok': True}), patch('orbehelm.adapters.subprocess.call', side_effect=nested):
             self.assertEqual(launch(self.root, output, resolved, 'codex', unique_key='APP-123', actor_id=self.actor), 0)
 
     def test_memory_is_versioned_scoped_and_project_acceptance_is_explicit(self):
-        saved = self.coordinator.save_knowledge('decision', 'Use a transaction.', 'task', 0)
-        again = self.coordinator.save_knowledge('decision', 'Use a transaction.', 'task', 0)
+        saved = self.coordinator.save_knowledge('decision', 'Use a transaction.', 'task', 0, kind='decision', evidence=['fixture:revision-1'])
+        again = self.coordinator.save_knowledge('decision', 'Use a transaction.', 'task', 0, kind='decision', evidence=['fixture:revision-1'])
         self.assertEqual(saved, again)
         with self.assertRaises(Conflict):
-            self.coordinator.save_knowledge('decision', 'Overwrite silently.', 'task', 0)
+            self.coordinator.save_knowledge('decision', 'Overwrite silently.', 'task', 0, kind='decision', evidence=['fixture:revision-1'])
         other = Coordinator(self.store, ensure_orbe(self.store, self.project, 'APP-124', 'developer'))
         self.assertEqual(other.context()['knowledge'], [])
         with self.assertRaises(OrbeHelmError):
             other.read_artifact(saved['artifact_id'])
-        proposed = self.coordinator.save_knowledge('architecture', 'Use explicit state transitions.', 'project', 0)
+        proposed = self.coordinator.save_knowledge('architecture', 'Use explicit state transitions.', 'project', 0, kind='decision', evidence=['fixture:revision-1'])
         self.assertEqual(other.context()['knowledge'], [])
         accept_knowledge(self.store, self.project.id, proposed['id'])
         self.assertEqual(other.context()['knowledge'][0]['status'], 'accepted')
@@ -237,16 +237,17 @@ class CoordinationTests(unittest.TestCase):
 
     def test_workflow_requires_review_before_qa_and_routes_results_to_parent(self):
         self.submit()
-        with self.assertRaises(Conflict):
-            self.coordinator.create_delegation('qa', 'qa', 'Run tests', self.coordinator.context()['version'])
+        # Both gates can be queued against the same candidate before either finishes.
+        queued_qa = self.coordinator.create_delegation('qa', 'qa', 'Run tests', self.coordinator.context()['version'])
         review = self.review()
         self.assertEqual(review['status'], 'completed')
-        self.assertEqual(self.coordinator.context()['state'], 'reviewed')
-        qa = self.coordinator.create_delegation('qa', 'qa', 'Check acceptance', self.coordinator.context()['version'])
+        self.assertEqual(self.coordinator.context()['state'], 'assessing')
+        qa = self.coordinator.create_delegation('qa', 'qa', 'Run tests', self.coordinator.context()['version'])
+        self.assertEqual(qa['id'], queued_qa['id'])
         self.coordinator.claim(qa['id'])
         child = Coordinator(self.store, qa['child_id'], qa['id'])
         child.stage_result('passed', 'All acceptance cases passed.', [], [])
-        self.assertEqual(self.coordinator.context()['state'], 'testing')
+        self.assertEqual(self.coordinator.context()['state'], 'assessing')
         self.coordinator.finish(qa['id'], True)
         self.assertEqual(self.coordinator.context()['state'], 'complete')
         self.assertEqual(qa['parent_id'], self.actor)
@@ -279,8 +280,8 @@ class CoordinationTests(unittest.TestCase):
         self.assertEqual(self.coordinator.context()['state'], 'developing')
         self.submit('candidate-2')
         self.assertNotEqual(self.coordinator.context()['candidate_id'], old_candidate)
-        with self.assertRaises(Conflict):
-            self.coordinator.create_delegation('qa', 'qa', 'Check', self.coordinator.context()['version'])
+        # A new candidate has no inherited gate results, even though QA may now start immediately.
+        self.assertEqual(self.coordinator.context()['state'], 'awaiting_review')
         stale = Coordinator(self.store, reviewed['child_id'], reviewed['id'])
         with self.assertRaises(Conflict):
             stale.stage_result('approved', 'Late result', [], [])
@@ -291,12 +292,12 @@ class CoordinationTests(unittest.TestCase):
             self.submit('candidate-4')
 
     def test_child_knowledge_snapshot_survives_later_project_knowledge_updates(self):
-        old = self.coordinator.save_knowledge('policy', 'Version one', 'project', 0)
+        old = self.coordinator.save_knowledge('policy', 'Version one', 'project', 0, kind='decision', evidence=['fixture:revision-1'])
         accept_knowledge(self.store, self.project.id, old['id'])
         other = Coordinator(self.store, ensure_orbe(self.store, self.project, 'APP-124', 'developer'))
         self.submit(coordinator=other)
         request = other.create_delegation('reviewer', 'review', 'Check', other.context()['version'])
-        new = self.coordinator.save_knowledge('policy', 'Version two', 'project', 1)
+        new = self.coordinator.save_knowledge('policy', 'Version two', 'project', 1, kind='decision', evidence=['fixture:revision-1'])
         accept_knowledge(self.store, self.project.id, new['id'], old['id'])
         child = Coordinator(self.store, request['child_id'], request['id'])
         self.assertEqual(child.context()['knowledge'][0]['artifact_id'], old['artifact_id'])
@@ -388,7 +389,12 @@ class CoordinationTests(unittest.TestCase):
             else:
                 self.assertIn('orbehelm', json.loads((prepared / 'opencode.json').read_text())['mcp'])
             command_line = child_command(prepared, agent, 'reviewer', 'Check')
-            self.assertFalse(any('bypass' in part or 'skip-permissions' in part for part in command_line))
+            if agent == 'codex':
+                self.assertIn('--dangerously-bypass-approvals-and-sandbox', command_line)
+            elif agent == 'claude':
+                self.assertIn('--dangerously-skip-permissions', command_line)
+            else:
+                self.assertEqual(json.loads((prepared / 'opencode.json').read_text())['permission'], 'allow')
 
     def test_keyed_dry_run_is_write_free_and_task_ui_is_project_scoped(self):
         resolved = resolve_project(self.store, self.project, spec='python', persist=True)
@@ -405,9 +411,12 @@ class CoordinationTests(unittest.TestCase):
         self.addCleanup(app.state.store.close)
         task_id = self.coordinator.context()['task_id']
         with TestClient(app, base_url='http://localhost:8765') as client:
-            self.assertIn('APP-123', client.get(f'/projects/{self.project.id}?tab=tasks').text)
-            self.assertEqual(client.get(f'/projects/{self.project.id}/tasks/{task_id}').status_code, 200)
-            self.assertEqual(client.get(f'/projects/{self.project.id}/tasks/{task_id}/artifacts/{submitted["candidate_id"]}').status_code, 200)
+            self.assertEqual(client.get(f'/projects/{self.project.id}?tab=tasks').status_code, 404)
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(main(['tasks', 'list', '--root', str(self.root), '--project', str(self.work)]), 0)
+            self.assertIn('APP-123', output.getvalue())
+            self.assertEqual(client.get(f'/projects/{self.project.id}/tasks/{task_id}').status_code, 404)
+            self.assertEqual(client.get(f'/projects/{self.project.id}/tasks/{task_id}/artifacts/{submitted["candidate_id"]}').status_code, 404)
             self.assertEqual(client.get(f'/projects/not-this-project/tasks/{task_id}').status_code, 404)
 
 

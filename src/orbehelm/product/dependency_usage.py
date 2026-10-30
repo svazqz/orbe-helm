@@ -139,10 +139,10 @@ def _shared_usage(store, release, kind, name):
             raise OrbeHelmError(f'Cannot verify dependency usage for project {project.name}')
         if config.release_id not in sources:
             sources[config.release_id] = verify_snapshot(store.root, releases[config.release_id].snapshot)
-        source = sources[config.release_id]
+        source = verify_snapshot(store.root, config.catalog_snapshot) if config.catalog_snapshot else sources[config.release_id]
         context = verify_snapshot(store.root, config.context_snapshot)
         graph = DependencyGraph(source, config.aliases)
-        href = f'/projects/{project.id}?tab={kind}'
+        href = None
         for label, data in [('project requirements', context_requirements(context)),
                             ('shared base', read_json(source / 'definitions/base/config.json'))]:
             if graph.requires(data, kind, name, registry_only=True):
@@ -168,7 +168,7 @@ def project_removal_details(store, project, config, kind, name):
         raise OrbeHelmError('This is not an explicit project addition. Inherited requirements cannot be removed here.')
     with store.read() as db:
         release = db.get(CatalogRelease, config.release_id)
-    catalog = verify_snapshot(store.root, release.snapshot)
+    catalog = verify_snapshot(store.root, config.catalog_snapshot or release.snapshot)
     selections, _ = current_selections(store, config)
     remaining = {}
     # Without a realized profile, base and project transitive requirements still apply.

@@ -2,6 +2,7 @@
 import os
 import shutil
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 from .core import OrbeHelmError, digest
 from .adapters import launch
@@ -14,6 +15,7 @@ from .product.projects import resolve_configuration, build_project
 
 
 def delegation_result(coordinator, record):
+    record = coordinator.persist_assessment(record)
     if record.get('result_id'):
         key = 'result' if record['status'] == 'completed' else 'unapproved_staged_result'
         return {**record, key: coordinator.read_artifact(record['result_id'])['data']}
@@ -21,11 +23,19 @@ def delegation_result(coordinator, record):
 
 
 def execute_delegation(coordinator, agent, profile, key, instructions, expected_version, cancel=None, timeout=300):
+    if profile == 'parallel':
+        return execute_assessments(coordinator, agent, key, instructions, expected_version, cancel, timeout)
     require_server(coordinator.store.root)
     record = coordinator.create_delegation(profile, key, instructions, expected_version)
     if record['status'] != 'queued':
         return delegation_result(coordinator, record)
-    record = coordinator.claim(record['id'])
+    try:
+        record = coordinator.claim(record['id'])
+    except Conflict:
+        # A concurrent identical request may have claimed it after our read.
+        with coordinator.store.read() as db:
+            current = db.get(Delegation, record['id'])
+            return delegation_result(coordinator, coordinator._delegation_dict(current))
     store = coordinator.store
     try:
         with store.read() as db:
@@ -59,11 +69,15 @@ def execute_delegation(coordinator, agent, profile, key, instructions, expected_
 
         prompt = ('Perform the delegated ' + profile + ' action. Read the OrbeHelm task context, inspect '
                   'the immutable submitted source in this working copy, and verify the relevant claims. '
+                  'For external artifact_refs, use your profile MCPs to inspect the exact pinned revision; '
+                  'a URL alone does not establish that revision. Report blocked if it cannot be verified. '
                   'Do not change submitted source files. You must call the orbehelm complete_delegation tool '
                   'with a structured result before exiting. Request: ' + instructions)
+        from .memory_runtime import native_session
         code = launch(store.root, output, resolved, agent, prompt=prompt,
             unique_key=child.orbe_key, actor_id=child.id, delegation_id=item.id,
-            workspace=work, headless=True, cancel=cancel, timeout=timeout, on_start=started)
+            workspace=work, headless=True, cancel=cancel, timeout=timeout, on_start=started,
+            memory_factory=native_session)
         # QA may create caches/test output, but every submitted input must remain identical.
         for relative, metadata in candidate['files'].items():
             path = safe_path(work, relative)
@@ -80,6 +94,22 @@ def execute_delegation(coordinator, agent, profile, key, instructions, expected_
     except KeyboardInterrupt:
         coordinator.finish(record['id'], False, 'interrupted')
         raise
+
+
+def execute_assessments(coordinator, agent, key, instructions, expected_version, cancel=None, timeout=300):
+    """Queue both gates before executing either, retaining individual retry identity."""
+    gates = coordinator.create_assessments(key, instructions, expected_version)
+    candidate = gates['reviewer']['candidate_id']
+    results = {}
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix='orbehelm-assessment') as pool:
+        futures = {role: pool.submit(execute_delegation, coordinator, agent, role, key,
+                    instructions, expected_version, cancel, timeout) for role in ('reviewer', 'qa')}
+        for role, future in futures.items():
+            try:
+                results[role] = future.result()
+            except (OrbeHelmError, OSError, ValueError) as error:
+                results[role] = {'status': 'failed', 'error': str(error)}
+    return {'candidate_id': candidate, 'assessments': results, 'state': coordinator.context()['state']}
 
 
 def recover_delegation(coordinator, delegation_id, confirm_stopped=False):

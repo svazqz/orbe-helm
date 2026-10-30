@@ -14,11 +14,12 @@ from .compatibility import database_file, orbe_records, read_record
 from .layout import server_url
 from .service import require_server, server_status
 from urllib.parse import urlsplit
+from .application import execute
 
 
 def parser():
     p = argparse.ArgumentParser(prog="oh", description="OrbeHelm: compose agent profiles and launch persistent orbes.")
-    p.add_argument("command", nargs="?", default="run", choices=["run", "resolve", "build", "doctor", "list", "skills", "status", "auth", "migrate", "web", "server", "projects", "definitions", "tasks", "memory", "mcp-serve"])
+    p.add_argument("command", nargs="?", default="run", choices=["run", "chat", "conversations", "orbes", "get", "add", "remove", "override", "reset", "set", "history", "diff", "rollback", "resolve", "build", "doctor", "list", "skills", "status", "auth", "migrate", "web", "server", "projects", "definitions", "tasks", "memory", "mcp-serve", "memory-serve"])
     p.add_argument("action", nargs="?", help="skills: list or install")
     p.add_argument("name", nargs="?", help="skill identifier for skills install")
     p.add_argument("--host", help="local server bind address; defaults to the installation URL")
@@ -36,7 +37,7 @@ def parser():
     p.add_argument("--skills", help="comma-separated registered or mapped skill names")
     p.add_argument("--prompt", help="initial task; not saved in orbe metadata")
     p.add_argument("--new-orbe", action="store_true", help="start fresh and make it the default orbe for this identity")
-    p.add_argument('--unique-key', help='stable task key; enables task memory and separates managed orbe slots')
+    p.add_argument('--unique-key', help='optional workstream/task key; omitted selects this profile\'s default project workstream')
     p.add_argument('--workspace', type=Path, help='existing working copy for a keyed task; project configuration remains shared')
     p.add_argument('--actor', help='logical orbe ID for scoped coordination tools')
     p.add_argument('--delegation', help='delegation ID for child binding or operator recovery')
@@ -48,6 +49,31 @@ def parser():
     p.add_argument('--confirm-stopped', action='store_true', help='operator confirms an uncertain native dispatch was stopped')
     p.add_argument("--dry-run", action="store_true", help="print only the planned launch command; do not create or modify files or start an agent")
     p.add_argument("--strict", action=argparse.BooleanOptionalAction, default=None, help="require exclusive context; unavailable in alpha")
+    p.add_argument('--global', dest='global_scope', action='store_true', help='select shared definitions instead of the current project')
+    p.add_argument('--from-file', help='UTF-8 mutation input, or - for stdin')
+    p.add_argument('--from-dir', type=Path, help='definition package containing definition.json and resources')
+    p.add_argument('--file', help='owned source path within a definition')
+    p.add_argument('--json', action='store_true', help='include content and provenance as JSON')
+    p.add_argument('--expected', help='expected revision for optimistic concurrency')
+    p.add_argument('--integration', choices=['herdr'], help='inspect an optional integration without starting an agent')
+    p.add_argument('--thread', help='existing conversation ID; defaults to the current project/profile/task thread')
+    p.add_argument('--query', default='', help='conversation history search text')
+    p.add_argument('--limit', type=int, default=50, help='maximum history/search events (1-200)')
+    p.add_argument('--after', type=int, help='page conversation events after this sequence')
+    p.add_argument('--new-session', action='store_true', help='start a new native conversation while retaining the orbe and memory')
+    p.add_argument('--allow-tool', action='append', default=[], help='explicit Claude tool permission rule for this managed chat; repeat as needed')
+    p.add_argument('--memory', action=argparse.BooleanOptionalAction, default=None, help='enable OrbeHelm memory; --no-memory uses native continuity and manual definition refresh')
+    p.add_argument('--memory-visibility', choices=['private', 'project', 'global'], help='default visibility of new typed knowledge; defaults to the stored context setting or private')
+    p.add_argument('--visibility', choices=['private', 'project', 'global'], help='new visibility for an explicit memory visibility operation')
+    p.add_argument('--kind', choices=['decision', 'architecture', 'feature', 'review', 'test', 'constraint'], help='knowledge outcome type')
+    p.add_argument('--evidence', action='append', default=[], help='artifact/revision evidence reference; repeat for multiple references')
+    p.add_argument('--audience', action='append', help='profile, profile:spec or *; defaults to all roles within the visibility scope')
+    p.add_argument('--evidence-state', choices=['proposed', 'implemented', 'verified'], default='proposed')
+    p.add_argument('--source-id', help='stable idempotency key for an explicit KUnit write')
+    p.add_argument('--binding-file', dest='memory_binding', type=Path, help='opaque launch memory binding; cannot select another owner')
+    p.add_argument('--embedding-model', help='local FastEmbed model name, or none to disable semantic retrieval')
+    p.add_argument('--download-model', action='store_true', help='explicitly download the public local embedding model during memory configure')
+    p.add_argument('--rebuild-index', action='store_true', help='rebuild derived search files from canonical KUnits')
     return p
 
 
@@ -61,11 +87,73 @@ def main(argv=None):
     try:
         defaults, skill_sources = load(args.config)
         builtin = {"agent": "codex", "profile": "developer", "spec": None,
-                   "project": Path.cwd(), "skillset": "", "skills": "", "strict": False}
+                   "project": Path.cwd(), "skillset": "", "skills": "", "strict": False, "memory": True}
         for name, value in builtin.items():
             if getattr(args, name) is None:
                 setattr(args, name, defaults.get("skillsets" if name == "skillset" else name, value))
         root = Path(args.root or os.environ.get("ORBEHELM_ROOT") or os.environ.get("AGENTIC_ROOT") or defaults.get("root") or Path(__file__).resolve().parents[2]).expanduser().resolve()
+        if args.command in {'get', 'add', 'remove', 'override', 'reset', 'set', 'history', 'diff', 'rollback'}:
+            if not args.action or args.name:
+                raise OrbeHelmError('Supply one typed definition target')
+            content = None
+            if args.from_file:
+                handle = sys.stdin if args.from_file == '-' else Path(args.from_file).open(encoding='utf-8')
+                try:
+                    content = handle.read(2 * 1024 * 1024 + 1)
+                finally:
+                    if handle is not sys.stdin:
+                        handle.close()
+            result = execute('definition', root, action=args.command, target=args.action,
+                project_path=args.project, global_scope=args.global_scope, file=args.file, content=content,
+                package=args.from_dir, revision=args.revision, expected=args.expected)
+            if args.command == 'get' and not args.json:
+                print(result['content'], end='' if result['content'].endswith('\n') else '\n')
+            else:
+                emit(result)
+            return 0
+        if args.command == 'doctor' and args.integration:
+            from .herdr import integration_status
+            emit(integration_status())
+            return 0
+        if args.command == 'orbes':
+            if args.action not in {None, 'list', 'show', 'history'}:
+                raise OrbeHelmError('Use orbes list|show|history [orbe-id]')
+            emit(execute('orbes', root, orbe_id=args.name))
+            return 0
+        if args.command == 'conversations':
+            memory_epoch = None
+            memory_visibility = None
+            memory_path = args.memory_binding or os.environ.get('ORBEHELM_MEMORY_BINDING')
+            if memory_path:
+                from .application import storage
+                from .memory import bound_service
+                with storage(root) as store:
+                    service = bound_service(store, memory_path)
+                    if args.action not in {'history', 'search', 'show'} or (args.thread or args.name) != service.conversation_id:
+                        raise OrbeHelmError('Conversation history is outside the memory binding')
+                    memory_epoch = service.repository.policy_epoch()
+                    memory_visibility = service.default_visibility
+            emit(execute('conversation', root, action=args.action or 'list', project_path=args.project,
+                         thread=args.thread or args.name, query=args.query, limit=args.limit, content_file=args.from_file, after=args.after,
+                         memory_epoch=memory_epoch, memory_visibility=memory_visibility))
+            return 0
+        if args.command == 'memory-serve':
+            from .memory_bridge import serve as serve_memory
+            if not args.memory_binding or args.action or args.name:
+                raise OrbeHelmError('memory-serve requires --binding-file')
+            return serve_memory(root, args.memory_binding)
+        if args.command == 'memory' and args.action not in {'save', 'read', 'accept'}:
+            from .application import storage
+            from .memory import dispatch as dispatch_memory
+            with storage(root) as store:
+                emit(dispatch_memory(store, args))
+            return 0
+        if args.command in {'chat', 'run'} and not args.memory and args.memory_visibility is not None:
+            raise OrbeHelmError('--memory-visibility cannot be combined with --no-memory')
+        if args.memory_visibility is not None and args.command not in {'chat', 'run'}:
+            raise OrbeHelmError('--memory-visibility applies to run, chat or memory put')
+        if args.command == 'chat':
+            return execute('chat', root, args=args, aliases=skill_sources)
         if args.command == 'server':
             if args.action not in {'start', 'status'} or args.name or args.dry_run or args.new_orbe:
                 raise OrbeHelmError('Usage: oh server start|status')
@@ -89,17 +177,16 @@ def main(argv=None):
             # Check before registration, publication, builds, or logical-orbe allocation.
             require_server(root)
         if args.command in {'tasks', 'memory'}:
-            from .product.coordination_commands import dispatch as coordinate
-            emit(coordinate(args, root))
+            emit(execute('coordination', root, args=args))
             return 0
         if (args.unique_key is not None or args.workspace is not None) and args.command != 'run':
             raise OrbeHelmError('--unique-key and --workspace apply only to run')
         if args.workspace is not None and args.unique_key is None:
             raise OrbeHelmError('--workspace requires --unique-key')
         if args.unique_key is not None:
-            from .product.coordination import unique_key
+            from .domain.coordination.policies import unique_key
             unique_key(args.unique_key)
-            if not database_file(root).exists():
+            if args.memory and not database_file(root).exists():
                 raise OrbeHelmError('Keyed task memory requires an initialized database; run oh migrate')
         if args.command not in {"skills", "projects", "definitions"} and (args.action or args.name):
             raise OrbeHelmError("Unexpected positional arguments")
@@ -108,19 +195,14 @@ def main(argv=None):
         if args.new_orbe and args.command != "run":
             raise OrbeHelmError("--new-orbe is supported only for run")
         if args.command in {"migrate", "web", "projects", "definitions"}:
-            from .product.commands import dispatch
-            result = dispatch(args, root, skill_sources)
+            result = execute('product', root, args=args, aliases=skill_sources)
             if result is not None:
                 emit(result)
             return 0
         if args.command == "auth":
             return authenticate(root, args.agent)
         if args.command == "list":
-            emit({"profiles": sorted(x.stem for x in (root / "definitions/profiles").glob("*.json")),
-                  "specializations": {x.name: sorted(p.stem for p in x.glob("*.json"))
-                                      for x in (root / "definitions/specializations").iterdir() if x.is_dir()},
-                  "skillsets": sorted(x.stem for x in (root / "definitions/skillsets").glob("*.json")),
-                  "agents": list(AGENTS)})
+            emit(execute('library.list', root, project=args.project, aliases=skill_sources, global_scope=args.global_scope))
             return 0
         if args.command == "status" and database_file(root).exists():
             from .product.database import Store
@@ -143,43 +225,20 @@ def main(argv=None):
             return 0
         if args.command == "skills":
             if args.action in {None, "list"} and not args.name:
-                emit({"available": sorted({x.stem for x in (root / "registry/skills").glob("*.json")} | set(skill_sources))})
+                emit({'available': execute('library.list', root, project=args.project, aliases=skill_sources)['skills']})
                 return 0
-            if args.action != "install" or not args.name:
-                raise OrbeHelmError("Usage: oh skills install <name>")
-            name = identifier(args.name)
-            selected = resolve(root, args.profile, args.spec, (), args.project,
-                               skills=[name], skill_sources=skill_sources)
-            definition = next(item for item in selected["skills"] if item["name"] == name)
-            with locked(root):
-                for dependency in selected["skills"]:
-                    install_skill(root, dependency)
-            emit({"skill": name, "sha256": definition["sha256"],
-                  "installed": str(root / "state/skills" / definition["sha256"])})
+            if args.action != 'install' or not args.name:
+                raise OrbeHelmError('Usage: oh skills install <name>')
+            emit(execute('skills.install', root, name=args.name, profile=args.profile, spec=args.spec,
+                         project=args.project, aliases=skill_sources))
             return 0
         if args.strict and args.command == "run":
             raise OrbeHelmError("Strict isolation is not available in alpha; no agent was launched")
         selected = selections(args.skillset, "skillset")
-        product_store = None
-        if database_file(root).exists():
-            from .product.database import Store
-            from .product.catalog import reconcile_catalog
-            from .product.projects import register_project, get_project, resolve_project
-            product_store = Store(root)
-            try:
-                if args.dry_run or args.command in {"resolve", "doctor"}:
-                    project = get_project(product_store, str(args.project))
-                else:
-                    reconcile_catalog(product_store)
-                    project = register_project(product_store, args.project, skill_sources)
-                resolved = resolve_project(product_store, project, profile=args.profile, spec=args.spec,
-                    skillsets=selected, skills=selections(args.skills, "skills"),
-                    persist=not args.dry_run and args.command in {"build", "run"})
-            finally:
-                product_store.close()
-        else:
-            resolved = resolve(root, args.profile, args.spec, selected, args.project,
-                               skills=selections(args.skills, "skills"), skill_sources=skill_sources)
+        resolved = execute('configuration.resolve', root, profile=args.profile, spec=args.spec,
+            skillsets=selected, project=args.project, skills=selections(args.skills, 'skills'), aliases=skill_sources,
+            publish=not args.dry_run and args.command not in {'resolve', 'doctor'},
+            persist=not args.dry_run and args.command in {'build', 'run'})
         if args.command == "resolve":
             emit(resolved)
             return 0
@@ -201,29 +260,28 @@ def main(argv=None):
                     planned += ['--config', str(args.config)]
                 if args.new_orbe:
                     planned.append('--new-orbe')
+                if args.new_session:
+                    planned.append('--new-session')
+                if not args.memory:
+                    planned.append('--no-memory')
+                if args.memory_visibility:
+                    planned += ['--memory-visibility', args.memory_visibility]
                 if args.prompt:
                     planned += ['--prompt', args.prompt]
                 print(shlex.join(planned))
                 return 0
             output = build_directory(root, resolved, args.agent)
-            print(launch(root, output, resolved, args.agent, args.prompt, dry_run=True, strict=args.strict, new_orbe=args.new_orbe))
+            print(launch(root, output, resolved, args.agent, args.prompt, dry_run=True, strict=args.strict,
+                         new_orbe=args.new_orbe, new_session=args.new_session, memory_enabled=args.memory))
             return 0
-        if resolved.get("project_id"):
-            from .product.projects import build_project
-            from .product.database import Store
-            store = Store(root)
-            try:
-                output, cached = build_project(store, resolved, args.agent)
-            finally:
-                store.close()
-        else:
-            output, cached = build(root, resolved, args.agent)
+        output, cached = execute('configuration.build', root, resolved=resolved, agent=args.agent)
         if args.command == "build":
             emit({"output": str(output), "cached": cached, "fingerprint": resolved["fingerprint"]})
             return 0
+        from .memory_runtime import native_session
         actor_id = None
         task_workspace = args.workspace
-        if args.unique_key is not None:
+        if args.memory and resolved.get('project_id'):
             from .product.coordination import ensure_orbe
             from .product.database import Store
             from .product.projects import get_project
@@ -235,9 +293,11 @@ def main(argv=None):
                 task_workspace = Coordinator(store, actor_id).context()['workspace']
             finally:
                 store.close()
-        result = launch(root, output, resolved, args.agent, args.prompt, args.dry_run, args.strict,
+        result = execute('launch', root, output=output, resolved=resolved, agent=args.agent, prompt=args.prompt,
+                        dry_run=args.dry_run, strict=args.strict,
                         new_orbe=args.new_orbe, unique_key=args.unique_key, actor_id=actor_id,
-                        workspace=task_workspace)
+                        workspace=task_workspace, new_session=args.new_session, memory_enabled=args.memory,
+                        memory_factory=native_session, memory_visibility=args.memory_visibility)
         if isinstance(result, str):
             print(result)
             return 0

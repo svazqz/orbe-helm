@@ -155,141 +155,84 @@ A local server example:
 
 `env` maps server variable names to host environment variable names, never literal secrets. The Codex alpha adapter requires identical names on both sides. Claude and OpenCode adapters emit their documented environment references. Missing required variables are reported before launch. Keep tokens out of arguments and URLs, which appear in generated files.
 
-An HTTP server requires `type: http`, a URL, and no command fields. Portable HTTP credential fields are not supported in alpha; native OAuth sign-in is available through the project UI. MCP registration configures a server; it does not install its executable. MCP processes are started by the agent, not during build or dry-run.
+An HTTP server requires `type: http`, a URL, and no command fields. Portable HTTP credential fields are not supported in alpha; native OAuth sign-in is available through `oh projects login-mcp`. MCP registration configures a server; it does not install its executable. MCP processes are started by the agent, not during build or dry-run.
 
-### Project dependency inventory
+## Typed CLI definition management
 
-The project web view has separate **Skills** and **MCP servers** tabs for configuration
-selections already realized by a normal build, launch, or UI dependency assignment.
-Choose a configuration and an agent to inspect its
-pinned dependencies. This inventory covers OrbeHelm-managed dependencies; it does
-not enumerate host-native plugins or built-in skills.
+Shared sources automatically apply to every project on its next launch. The optional
+web editor manages only shared definitions/history. Project-local replacement/reset
+and project operations use the CLI:
 
-Skill details show the full instructions, resource filenames, original source,
-content digest, and a top-level scalar `version` from frontmatter when declared.
-**Check for skill updates** and **Check authentication** explicitly check sources or host metadata and store
-timestamped observations inside `state/projects/<project-id>/capabilities/`.
-Rendering a page does not initiate these checks. Skill observations are shared
-across agents; authentication observations are scoped to an agent and native runtime.
+```sh
+oh get definition.profile.developer
+oh get definition.profile.developer --json
+oh override definition.profile.developer --from-file=./developer.md
+oh reset definition.profile.developer
+oh set definition.profile.developer --from-file=./developer.md --global
+```
 
-For local registry skills, update checks compare with the latest published catalog.
-Local aliases compare with their original source directory. Remote skills compare
-with a fresh download of their selected URL, bypassing the dependency cache and
-content pin for observation only. A different digest means **Update available**;
-it does not establish semantic version ordering. Immutable commit URLs remain tied
-to that commit; checks do not search for new release tags. Failed checks show
-**Unknown**. No check replaces pinned trees, edits a selection lock, or adopts a release.
+`--file=<owned-path>` selects one manifest, instruction, or registered resource. Names
+are typed as `definition.base`, `definition.profile.<name>`,
+`definition.specialization.<profile>.<name>`, `definition.skill.<name>`,
+`definition.skillset.<name>`, or `definition.mcp.<name>`. Multiple instruction files
+require explicit selection. Default scope is the current project; `--project` selects
+another directory. `get --global` reads shared content. `override`/`reset` are local
+operations, while shared edits use `set --global`.
 
-Codex authentication checks invoke `codex mcp list --json` using the matching active
-orbe's `CODEX_HOME` and project directory. Only matching server transports and
-allowlisted metadata reach the UI. An OAuth login is displayed as **Authenticated**;
-a bearer token is **Credential configured**, since validity has not been tested.
-No login, unsupported status reporting, disabled servers, and unknown status remain
-distinct. These are host-reported observations, not server access tests. A missing
-runtime, unavailable CLI, malformed output, timeout, or a different endpoint yields
-**Unknown**. Raw CLI output and credential contents are never displayed or stored.
+`add --from-dir` takes `definition.json` plus UTF-8 resources. Instruction paths inside
+the package are relative to that package and are rewritten to the canonical owned
+source directory. Skill packages contain SKILL.md and a skill registry manifest.
+Single-file MCP/skillset additions support `--from-file`. Repeated adds and dependency-
+invalid removals fail. A local `remove` masks/removes that target only in the selected
+project; reset clears the decision. Mutations validate candidate source snapshots and
+append history. `--expected=<revision>` optionally guards a caller's observed state;
+all mutations also recheck their captured revision under the product lock.
 
-Claude and OpenCode authentication status adapters are not implemented yet. Their
-entries display **Unknown** with that limitation; this view cannot currently establish
-whether those runtimes are authenticated. The web UI starts no model conversation.
-The Codex metadata command was verified in an isolated verification home;
-authenticated status and Claude/OpenCode live integration remain unverified.
+Use `history`, `diff --revision=<id>`, and `rollback --revision=<id>` with the same target.
+Shared rollback publishes restored bytes as a new revision; historical sources remain
+immutable. Project-local rollback creates local replacements on the current shared
+catalog. Read [scope and removal rules](configuration-scopes-and-removal.md).
 
-Portable configuration fingerprints and skill/MCP selection locks exclude agent
-choice. Generated adapter files, native conversation slots, and authentication observations
-remain agent-specific. Changing agent reuses the dependency selection and does not
-merge incompatible runtime files or conversation histories.
+## Project context and management
 
-### Adding and enabling capabilities from the UI
+`orbehelm.project.json` uses the layer shape above; paths resolve against the selected
+project directory. Parent directories are not searched. Project context and user skill
+aliases are snapshotted. Run `oh projects refresh` after externally editing them.
+Shared source publication does not overwrite project context or local replacements.
 
-Start at **Projects** and open a project. Its **Overview** links to the common tasks;
-**Skills**, **MCP servers**, **Instructions**, **Updates**, **Orbes**, and **History**
-separate everyday configuration from advanced editing and rollback.
+`projects register/show/history` manage project identity and provenance.
+`projects add-skill/remove-skill/add-mcp/remove-mcp` edit explicit project additions,
+preserving inherited and independent requirements. `projects capabilities` inspects
+realized dependency selections after a normal build/launch; it does not implicitly
+start a check. A newly inherited revision is realized when first used.
+`projects check-capabilities` explicitly checks skill update metadata and supported
+native authentication metadata. These observations do not validate model access or
+MCP connectivity. Claude/OpenCode authentication status remains unsupported/unknown.
+`projects login-mcp <name> --agent=<agent>` explicitly runs native sign-in using an
+available matching runtime and leaves the provider CLI responsible for credentials.
 
-Use the sidebar's shared **Skills** or **MCP servers** page to add a registration.
-Skill sources accept public HTTPS URLs or existing checkout folders under `skills/`
-or `examples/skills/`. A skill folder must contain `SKILL.md`. The form can also name
-existing skill and MCP dependencies. MCP forms support remote HTTP endpoints and
-local stdio commands, arguments, and environment variable name mappings. They never
-accept literal credential fields, install MCP executables, or execute skill scripts.
-Invalid forms preserve entries and explain the error. Names must be unique.
+The SQLite database and immutable source revisions retain historical launch inputs.
+Shared changes append source-only effective project revisions without builds or remote
+downloads. Invalid local dependencies block their affected launch instead of silently
+using an older shared release. Existing legacy section overrides remain readable; new
+typed overrides replace whole files, and reset clears legacy profile overrides too.
 
-Saving publishes a validated shared library version and leaves project pins unchanged.
-When adding from a project, the next screen is its **Updates** preview. Apply that
-version, then choose **Enable an existing skill/MCP server** in the relevant tab.
-Enabling an item updates the project's `orbehelm.project.json` and commits a validated
-project revision without starting a model conversation. External manifest edits cause
-a conflict rather than being overwritten; failed preparation restores the previous
-manifest and configuration. Dependencies apply to every profile in that project.
+Old projects preview/update/rollback commands remain compatible historical operations;
+normal shared source updates no longer require them. Schema upgrades remain separate,
+reviewed Alembic migrations run by setup/update/migrate, never generated during launch.
 
-### MCP browser sign-in
+## Conversation freshness
 
-On a project's **MCP servers** tab, select an agent configuration. For HTTP servers,
-**Sign in with [agent]** invokes its dedicated OAuth command using the matching active
-native runtime and generated configuration. It runs `codex mcp login`, `claude mcp login`
-with the explicit MCP configuration, or `opencode mcp auth` with runtime config and XDG
-directories. The agent CLI owns browser callbacks and credential storage. OrbeHelm does
-not read credentials or capture command output. This preserves the adapters' existing
-isolation limits; it does not establish exclusive isolation.
+The policy digest covers effective instructions, selected skill hashes, and MCP
+configuration. Unrelated catalog changes do not require a new native conversation.
+Changed policy starts a fresh native conversation under the same logical work identity
+and preserves captured history. Managed chat also supports switching Claude/Codex with
+shared memory and an explicit bounded handoff. Read [conversation memory](conversation-memory.md)
+for exact-ID resume, capture coverage, private storage, and context limitations.
 
-Complete the provider flow in the browser window opened on this computer, then refresh
-the progress page. Duplicate starts reuse an active job for the same server/runtime.
-Jobs expire after three minutes and can be cancelled; shutting down the UI terminates
-unfinished children. Job status is in memory and is lost when the UI restarts. A successful
-command is reported as command completion, not proof of continued server access.
+### Memory default
 
-Sign-in requires an installed CLI and a matching runtime that has loaded this server.
-If those prerequisites are missing, the server card explains the next step. Local stdio
-servers use their configured environment variables instead. CLI variants that need an
-interactive terminal or manual callback pasting require terminal sign-in. Codex command
-help was verified in an isolated home. Fake-child and ASGI tests cover launch scoping,
-completion, failure, timeout, cancellation, and shutdown; actual provider OAuth and
-Claude/OpenCode CLI compatibility still require manual integration verification.
-
-## Configuration scope and removal rules
-
-See [Configuration scopes, updates, and removal](configuration-scopes-and-removal.md)
-for the distinction between shared registrations, profile requirements, project-wide
-additions, and project profile instruction overrides. It also records the approved
-removal policy. Project tabs can remove explicit additions; shared library removal
-is blocked while active references exist. Project-origin
-registration forms retain project navigation while explicitly creating shared entries.
-
-## Project context
-
-Put `orbehelm.project.json` in the directory passed through `--project`. It uses the layer shape above, but its instruction paths resolve relative to that project. Skill and MCP names still resolve through the wrapper registry. Parent directories are not searched for this wrapper file.
-
-The `examples/project` directory provides a working example. Host-native project instruction discovery is separate and may still apply.
-
-## Product configuration lifecycle
-
-After `oh migrate`, global source files are drafts for an immutable catalog.
-Normal build/run publishes a validated catalog if its source content changed. This
-makes an update available; it does not change any existing project's selected release.
-Use the local UI or `oh projects preview` and `projects update` to adopt a whole
-release. `--release=<id>` selects a specific release. `definitions history` lists
-release IDs; `definitions diff --revision=<old> --release=<new>` shows source differences.
-
-New projects are registered on their first normal build/run, or explicitly with
-`projects register --project=<directory>`. The initial revision captures the current
-published release, project context, and user skill aliases. Existing project IDs are
-keyed by canonical path; relocating a project is not supported as an automatic rename.
-Read-only resolve/doctor/dry runs require prior registration and do not publish drafts.
-
-The selected project's `orbehelm.project.json` and referenced instruction files are
-snapshotted. Local alias trees are preserved; remote dependencies are locked when a
-selection is first realized. `projects refresh` explicitly captures changed project
-context and aliases. Other projects' configurations remain untouched.
-
-The UI's project profile override editor accepts the common seven-section template.
-Operations are applied after global profile instructions and before specialization.
-Only instruction sections can be changed through this editor; inherited skill/MCP
-requirements remain additive. An override retains hashes for its original profile
-sections. An upstream change to a locally touched section blocks adoption until
-explicitly resolved by revising/removing the override. Rollback through
-`projects rollback --revision=<project-configuration-id>` selects the complete previous
-project configuration and leaves native conversation histories intact.
-
-Schema migrations are separate from definition releases: maintain reviewed Alembic
-scripts under `src/orbehelm/product/migrations/versions/`; never generate them on launch.
-The UI requires local Host/Origin and CSRF validation. Do not expose it remotely.
+`memory = true` (the default) or `memory = false` is supported under `[ORBEHELM]`.
+Launch flags `--memory` and `--no-memory` override this value. Memory-off mode keeps
+native agent history and requires a manual instruction reread after definition
+changes. See [memory modes](knowledge-memory.md#optional-native-continuity).

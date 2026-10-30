@@ -1,5 +1,10 @@
 # Task orchestration and memory
 
+The current workflow supports [parallel reviewer and QA](persistent-workflows.md)
+against the same candidate, with both gates required. The historical sequential
+ordering below is superseded. Unkeyed sessions also have a logical actor. Execution
+requests full privileges, independently of each role's workflow authority.
+
 OrbeHelm owns the task identity, persisted context, delegation records, and workflow
 transitions. The native agent owns its conversation and tool approvals. This first
 implementation supports an explicit developer → reviewer → developer → QA →
@@ -7,51 +12,9 @@ developer workflow through an OrbeHelm stdio MCP server.
 
 ## Start a keyed task
 
-For an installed application, run `oh server start` in one terminal and launch
-`oh run --project=/path/to/project --unique-key=APP-123` in another. Setup already
-initializes the application database. Both root and child launches require the
-matching healthy server. See [Installation](installation.md).
-
-For direct checkout use:
-
-Activate the checkout's Python environment, stop the old web process, and explicitly
-upgrade the database before using this version:
-
-```sh
-source .venv/bin/activate
-./oh migrate
-./oh server start
-```
-
-Migration `0002` preserves existing orbe IDs, slot keys, launch records, and
-configuration history. `migrate` backs up an existing database under
-`state/backups/`. Downgrade requires restoring a backup; there is no destructive
-history-removal migration. Existing databases require this migration even for
-unkeyed product operations. No real database is migrated by installing the code.
-
-```sh
-./oh run --project=/path/to/project --agent=codex \
-  --profile=developer --spec=python --unique-key=APP-123 \
-  --prompt='Implement APP-123, then use OrbeHelm reviewer and QA delegation.'
-```
-
-Normal launches register the project automatically; read-only dry runs require prior registration. A task is identified by the project and
-unique key. Its logical role orbes exclude the provider; native conversation
-slots and runtime homes retain the provider. Switching provider shares task memory
-and ownership, but does not transfer native conversation history. Omitting the key
-retains the legacy native identity and does not enable orchestration.
-
-For concurrent developers, prepare separate working copies and pass an existing
-directory with `--workspace=/path/to/task-worktree`. Project configuration continues
-to come from `--project`. A task's workspace is fixed on first launch. OrbeHelm rejects
-simultaneous keyed developer launches against the same canonical workspace. It does
-not create worktrees or isolate other processes or legacy unkeyed orbes.
-
-Child keys derive from the root task key, parent logical orbe, role, and delegation
-key. Different tasks cannot collide in one reviewer. `ORBEHELM_UNIQUE_KEY` carries
-the root key; `ORBEHELM_ORBE_KEY` carries the derived native slot key. Each new
-candidate runs a fresh child native conversation; the developer can retain its own
-native conversation across fixes. This feature does not install native subagent plugins.
+For an installed application, setup/update initializes the local application database.
+Root launches, child delegation, and stdio MCP operations need no running web server.
+Use `oh web` only for the optional shared-definition editor. See [Installation](installation.md).
 
 ## Deterministic workflow
 
@@ -127,8 +90,10 @@ remain authoritative. Do not hand-edit the database or generated artifact files.
 
 ## Inspection and operator recovery
 
-The project UI has a **Tasks** tab with task state, handoff, knowledge links, child
-results, and recent events. These pages are read-only and never start a model.
+Use `oh tasks list` and `oh tasks context --actor=<id>` to inspect task state,
+handoffs, knowledge references, child results, and workflow versions. Read candidate
+artifacts with `oh memory read --actor=<id> --data-file=<request.json>` using the
+artifact ID returned by task context. The optional editor has no project/task routes.
 
 ```sh
 ./oh tasks list --project=/path/to/project

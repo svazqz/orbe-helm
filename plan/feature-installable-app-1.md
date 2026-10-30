@@ -4,13 +4,18 @@ version: 1
 date_created: 2026-10-29
 last_updated: 2026-10-29
 owner: OrbeHelm
-status: 'Completed'
+status: 'Deprecated'
 tags: [feature, installation, server, storage]
 ---
 
 # Introduction
 
-![Status: Completed](https://img.shields.io/badge/status-Completed-brightgreen)
+Historical plan. Its required-server and manual shared-release-adoption contracts are
+superseded by [the local CLI and conversation plan](refactor-cli-api-live-definitions-1.md).
+Installation layout and immutable history remain in use.
+
+
+![Status: Deprecated](https://img.shields.io/badge/status-Deprecated-red)
 
 Install a self-contained application from a clone, retain user definitions on reinstall,
 and require a matching healthy server before creating or launching an orbe.

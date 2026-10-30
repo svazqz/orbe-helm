@@ -1,0 +1,7 @@
+{
+  "src/orbehelm/product/migrations/versions/0001_initial.py": "cd935eb79aa9834ff5232b4ff8de2e76f0372c723e6b2fd32fbd3e64a4bd8978",
+  "src/orbehelm/product/migrations/versions/0002_task_coordination.py": "7e945a287780e4701a26bf307850da6a4d7cd12110f6e675f753d16c8bffe42b",
+  "src/orbehelm/product/migrations/versions/0003_orbe_naming.py": "2fea90518b8e2b3384ce6c7f4eeca3e209dc95a6eb1067afd114022c94fa8567",
+  "src/orbehelm/product/migrations/versions/0004_live_conversations.py": "f0b63e1dc929d301ba651d0d702f805d4a198d04361461f96d6a55e9866f23f5",
+  "src/orbehelm/product/migrations/versions/0005_knowledge_units.py": "88e2aeb40d1e12ddc536daf7b9ee8e3e648bbf07a61f0fc09b1750e2824384dc"
+}

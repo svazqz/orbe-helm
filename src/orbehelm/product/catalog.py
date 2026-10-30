@@ -11,8 +11,7 @@ from .database import product_lock
 from .models import CatalogRelease, Definition, DefinitionRevision, ReleaseMember
 
 
-class Conflict(OrbeHelmError):
-    """An expected revision or source changed; the caller must refresh before retrying."""
+from orbehelm.domain.shared.errors import Conflict
 
 
 def collect_catalog(root, edits=None, additions=None, removals=()):
@@ -38,8 +37,8 @@ def collect_catalog(root, edits=None, additions=None, removals=()):
             raise Conflict('A registration with this name already exists')
         files[name] = {'content': content.encode(), 'executable': False}
     for name, content in (edits or {}).items():
-        if name not in files or not name.endswith((".md", ".json")):
-            raise OrbeHelmError("Only existing Markdown and JSON definitions can be edited")
+        if name not in files:
+            raise OrbeHelmError("Only existing catalog sources can be edited")
         if len(content.encode()) > 2 * 1024 * 1024:
             raise OrbeHelmError("Definition exceeds size limit")
         files[name] = {"content": content.encode(), "executable": files[name]["executable"]}
@@ -117,20 +116,25 @@ def recover_publication(store):
         release = db.get(CatalogRelease, data['release_id'])
     if release:
         source = verify_snapshot(store.root, release.snapshot)
-        target = contained(store.root, data['path'])
-        actual = digest(target.read_bytes()) if target.is_file() else None
-        if actual != data['after']:
-            if actual != data['before']:
-                raise Conflict('External edit conflicts with interrupted publication; restore the edited file to its previous or published content')
-            if data['after'] is None:
-                target.unlink()
-            else:
-                temporary = target.with_name(target.name + '.orbehelm-tmp')
-                target.parent.mkdir(parents=True, exist_ok=True)
-                published = contained(source, data['path'])
-                temporary.write_bytes(published.read_bytes())
-                temporary.chmod(0o755 if published.stat().st_mode & 0o111 else 0o644)
-                temporary.replace(target)
+        edits = data.get('edits', [data])
+        for item in edits:
+            target = contained(store.root, item['path'])
+            actual = digest(target.read_bytes()) if target.is_file() else None
+            if actual != item['after']:
+                if actual != item['before']:
+                    raise Conflict('External edit conflicts with interrupted publication; restore the edited file to its previous or published content')
+                if item['after'] is None:
+                    target.unlink()
+                else:
+                    temporary = target.with_name(target.name + '.orbehelm-tmp')
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    published = contained(source, item['path'])
+                    temporary.write_bytes(published.read_bytes())
+                    temporary.chmod(0o755 if published.stat().st_mode & 0o111 else 0o644)
+                    temporary.replace(target)
+            if item['after'] is not None:
+                published = contained(source, item['path'])
+                target.chmod(0o755 if published.stat().st_mode & 0o111 else 0o644)
     journal.unlink()
 
 
@@ -144,6 +148,9 @@ def _publish(store, files, message, edit=None):
     key = save_snapshot(store.root, files)
     current = latest(store)
     if current and current.snapshot == key:
+        from .projects import follow_shared_release
+        with store.write() as db:
+            follow_shared_release(store, db, current)
         return current
     validate_catalog(verify_snapshot(store.root, key), store.root)
     # Snapshots are published before database references, so crashes can only leave orphans.
@@ -170,6 +177,8 @@ def _publish(store, files, message, edit=None):
                 db.add(revision)
                 db.flush()
             db.add(ReleaseMember(release_id=release.id, path=path, revision_id=revision.id))
+        from .projects import follow_shared_release
+        follow_shared_release(store, db, release)
     if edit:
         recover_publication(store)
     return release
@@ -183,7 +192,7 @@ def edit_definition(store, path, content, expected_release, expected_hash):
             raise Conflict('Global definitions changed; refresh the editor')
         published = verify_snapshot(store.root, current.snapshot)
         members = json.loads((published.parent / 'manifest.json').read_text())
-        if path not in members or not path.startswith(('definitions/', 'registry/')):
+        if path not in members:
             raise OrbeHelmError('Only catalog definition files can be edited')
         target = contained(store.root, path)
         if not target.is_file() or digest(target.read_bytes()) != expected_hash:
@@ -239,6 +248,30 @@ def remove_registration(store, kind, name, expected_release):
         files = collect_catalog(store.root, removals=[path])
         return _publish(store, files, f'Removed {kind}: {name}',
                         {'path': path, 'before': digest((published / path).read_bytes()), 'after': None})
+
+
+def restore_release(store, revision, expected):
+    """Restore shared bytes as a new publication, preserving all audit history."""
+    with product_lock(store.root):
+        recover_publication(store)
+        current = latest(store)
+        if current.id != expected:
+            raise Conflict('Shared definitions changed; refresh before restoring')
+        original = collect_catalog(store.root)
+        if digest(canonical(manifest(original)).encode()) != current.snapshot:
+            raise Conflict('Working definitions changed; publish them before restoring')
+        with store.read() as db:
+            old = db.get(CatalogRelease, revision)
+        if old is None:
+            raise OrbeHelmError('Unknown shared release')
+        source = verify_snapshot(store.root, old.snapshot)
+        from .definition_operations import snapshot_files
+        files = snapshot_files(source)
+        edits = [{'path': name,
+                  'before': digest(original[name]['content']) if name in original else None,
+                  'after': digest(files[name]['content']) if name in files else None}
+                 for name in original.keys() | files.keys()]
+        return _publish(store, files, f'Restored shared release {old.sequence}', {'edits': edits})
 
 
 def diff_releases(store, before_id, after_id):

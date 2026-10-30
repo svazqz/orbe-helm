@@ -59,6 +59,38 @@ def dispatch(args, root, aliases):
             project = register_project(store, args.project, aliases)
             return {'id': project.id, 'configuration': project.active_revision}
         project = get_project(store, str(args.project))
+        if args.action in {'add-skill', 'remove-skill', 'add-mcp', 'remove-mcp'}:
+            from .projects import add_project_dependency, remove_project_dependency
+            kind = 'skills' if args.action.endswith('skill') else 'mcp'
+            if not args.name:
+                raise OrbeHelmError('Supply a dependency name')
+            change = remove_project_dependency if args.action.startswith('remove') else add_project_dependency
+            row = change(store, project, kind, args.name, args.expected or project.active_revision)
+            return {'configuration': row.id, 'kind': kind, 'name': args.name}
+        if args.action in {'capabilities', 'check-capabilities', 'login-mcp'}:
+            from .capabilities import inventory, check_capabilities
+            config = configuration_for(store, project)
+            data = inventory(store, project, config, agent=args.agent)
+            if args.action == 'capabilities':
+                return data
+            if args.action == 'check-capabilities':
+                return check_capabilities(store, project, config, data['selection'], args.agent)
+            from .authentication import login_command, unavailable
+            import subprocess
+            server = next((item for item in data['mcp'] if item['name'] == args.name), None)
+            if server is None:
+                raise OrbeHelmError('Select an enabled MCP server by name')
+            reason = unavailable(args.agent, data['runtime'], server['transport'])
+            if reason:
+                raise OrbeHelmError(reason)
+            command, environment = login_command(args.agent, data['runtime'], data['output'], args.name)
+            return {'exit_code': subprocess.call(command, cwd=project.path, env=environment)}
+        if args.action == 'history':
+            from .models import ProjectConfiguration
+            with store.read() as db:
+                return [{'id': row.id, 'release': row.release_id, 'reason': row.reason, 'created_at': row.created_at}
+                        for row in db.scalars(select(ProjectConfiguration).where(ProjectConfiguration.project_id == project.id)
+                                              .order_by(ProjectConfiguration.created_at.desc()))]
         if args.action == 'show':
             config = configuration_for(store, project)
             return {'id': project.id, 'path': project.path, 'configuration': config.id,

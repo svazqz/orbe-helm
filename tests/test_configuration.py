@@ -82,7 +82,7 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in data["skills"]], ["testing", "review"])
         code, output, _ = self.cli("--dry-run")
         self.assertEqual(code, 0)
-        self.assertIn("claude --append-system-prompt-file", output)
+        self.assertIn("claude --dangerously-skip-permissions --append-system-prompt-file", output)
         code, output, _ = self.cli("resolve", "--spec=rust", "--skills=", "--skillset=")
         self.assertEqual(code, 0)
         data = json.loads(output)

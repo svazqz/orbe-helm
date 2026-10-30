@@ -17,6 +17,26 @@ from .models import (Project, ProjectConfiguration, CatalogRelease, ProjectOverr
                      ConfigurationBuild, SelectionLock, OrbeLaunch, Orbe, new_id)
 
 
+def ensure_context(store, project_id, profile, spec=None, unique_key=None, conversation_id=None):
+    """Map stable workstreams to isolated contexts without moving native histories."""
+    from ..domain.orbes.identity import workstream_id, context_id
+    from .models import Workstream, SessionContext
+    work_id = workstream_id(project_id, profile, unique_key)
+    ctx_id = context_id(work_id, spec)
+    with product_lock(store.root), store.write() as db:
+        if db.get(Workstream, work_id) is None:
+            db.add(Workstream(id=work_id, project_id=project_id, profile=profile, unique_key=unique_key or ''))
+            db.flush()
+        row = db.get(SessionContext, ctx_id)
+        if row is None:
+            db.add(SessionContext(id=ctx_id, workstream_id=work_id, specialization=spec or '', conversation_id=conversation_id))
+        elif conversation_id:
+            if row.conversation_id and row.conversation_id != conversation_id:
+                raise Conflict('This isolated context already maps to another conversation')
+            row.conversation_id = conversation_id
+    return {'workstream_id': work_id, 'context_id': ctx_id}
+
+
 def capture_context(root, project, aliases):
     files = {}
     path = project_file(project)
@@ -98,6 +118,39 @@ def selection_key(profile='developer', spec=None, skillsets=(), skills=()):
                       'skillsets': sorted(set(skillsets)), 'skills': sorted(set(skills))})
 
 
+def overlay_snapshot(store, shared_snapshot, overrides):
+    if not overrides:
+        return None
+    source = verify_snapshot(store.root, shared_snapshot)
+    files = {}
+    for path in source.rglob('*'):
+        if path.is_file():
+            capture_file(source, path.relative_to(source).as_posix(), files)
+    for name, entry in overrides.items():
+        contained(source, name)
+        if entry is None:
+            files.pop(name, None)
+        else:
+            files[name] = {'content': entry['content'].encode(), 'executable': entry.get('executable', False)}
+    return save_snapshot(store.root, files)
+
+
+def follow_shared_release(store, db, release):
+    """Publish cheap source revisions for all projects, without builds or downloads."""
+    for project in db.scalars(select(Project)).all():
+        current = db.get(ProjectConfiguration, project.active_revision)
+        if current is None or current.release_id == release.id:
+            continue
+        candidate = ProjectConfiguration(id=new_id(), project_id=project.id, release_id=release.id,
+            parent_id=current.id, context_snapshot=current.context_snapshot, aliases=current.aliases,
+            overrides=current.overrides, file_overrides=current.file_overrides,
+            catalog_snapshot=overlay_snapshot(store, release.snapshot, current.file_overrides),
+            reason='Automatically inherited shared definitions')
+        db.add(candidate)
+        db.flush()
+        project.active_revision = candidate.id
+
+
 def _fingerprint(result, catalog_path, context_path):
     # Physical snapshot locations and release IDs must not invalidate unrelated inputs.
     normalized = copy.deepcopy(result)
@@ -129,13 +182,12 @@ def resolve_configuration(store, project, config, profile='developer', spec=None
         release = db.get(CatalogRelease, config.release_id)
         lock = db.get(SelectionLock, (config.id, key))
         overrides = {name: db.get(ProjectOverrideRevision, value).content for name, value in config.overrides.items()}
-    source = verify_snapshot(store.root, release.snapshot)
+    source = verify_snapshot(store.root, config.catalog_snapshot or release.snapshot)
     context = verify_snapshot(store.root, config.context_snapshot)
     if lock:
         result = copy.deepcopy(lock.resolved)
         # Source/dependency locks persist; renderer implementation is checked separately.
-        result['implementation'] = {p.name: digest(p.read_bytes()) for p in sorted(Path(core.__file__).parent.glob('*.py'))
-            if p.name in {'core.py', 'composition.py', 'adapters.py', 'remote_skills.py', 'snapshots.py'}}
+        result['implementation'] = core.implementation_hashes()
     else:
         aliases = {name: str(contained(context, entry['path'])) if 'path' in entry else entry['source']
                    for name, entry in config.aliases.items()}
@@ -229,7 +281,8 @@ def preview_adoption(store, project, target_release):
     conflicts = [row.profile for row in override_rows if override_conflicts(source, row)]
     candidate = ProjectConfiguration(id=new_id(), project_id=project.id, release_id=target.id,
         parent_id=current.id, context_snapshot=current.context_snapshot, aliases=current.aliases,
-        overrides=current.overrides, reason='Preview only')
+        overrides=current.overrides, file_overrides=current.file_overrides,
+        catalog_snapshot=overlay_snapshot(store, target.snapshot, current.file_overrides), reason='Preview only')
     affected = []
     for agent, key in _used_selections(store, project.id):
         selection = json.loads(key)
@@ -261,7 +314,9 @@ def _adopt_configuration(store, project, release_id, expected, overrides=None, r
         snapshot, saved_aliases = context_snapshot, current.aliases
     candidate = ProjectConfiguration(id=new_id(), project_id=project.id, release_id=release_id,
         parent_id=current.id, context_snapshot=snapshot, aliases=saved_aliases,
-        overrides=dict(current.overrides if overrides is None else overrides), reason='Adopted project configuration')
+        overrides=dict(current.overrides if overrides is None else overrides), file_overrides=current.file_overrides,
+        catalog_snapshot=overlay_snapshot(store, _release(store, release_id).snapshot, current.file_overrides),
+        reason='Adopted project configuration')
     # Stage and validate all realized selections before making the revision active.
     prepared = []
     portable = []
@@ -275,14 +330,14 @@ def _adopt_configuration(store, project, release_id, expected, overrides=None, r
     for agent, key in selections:
         result = resolve_configuration(store, project, candidate, **json.loads(key))
         freeze_skills(store, result)
-        result['fingerprint'] = _fingerprint(result, verify_snapshot(store.root, _release(store, release_id).snapshot),
+        result['fingerprint'] = _fingerprint(result, verify_snapshot(store.root, candidate.catalog_snapshot or _release(store, release_id).snapshot),
                                               verify_snapshot(store.root, snapshot))
         output, _ = core.build(store.root, result, agent)
         prepared.append((agent, key, result, output))
     for key in unrendered:
         result = resolve_configuration(store, project, candidate, **json.loads(key))
         freeze_skills(store, result)
-        result['fingerprint'] = _fingerprint(result, verify_snapshot(store.root, _release(store, release_id).snapshot),
+        result['fingerprint'] = _fingerprint(result, verify_snapshot(store.root, candidate.catalog_snapshot or _release(store, release_id).snapshot),
                                             verify_snapshot(store.root, snapshot))
         portable.append((key, result))
     if context_snapshot is not None:
@@ -369,7 +424,7 @@ def _change_project_dependency(store, project, kind, name, expected, remove):
         current = configuration_for(store, project)
         if current.id != expected:
             raise Conflict('Project changed; refresh before changing a dependency')
-        catalog = verify_snapshot(store.root, _release(store, current.release_id).snapshot)
+        catalog = verify_snapshot(store.root, current.catalog_snapshot or _release(store, current.release_id).snapshot)
         if not remove and not (catalog / f'registry/{kind}/{name}.json').is_file():
             raise OrbeHelmError('This item is not in the project catalog yet. Review and apply shared library updates first.')
         context = verify_snapshot(store.root, current.context_snapshot)

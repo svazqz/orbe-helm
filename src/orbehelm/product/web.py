@@ -15,24 +15,16 @@ from sqlalchemy import select
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException
 
-from orbehelm.composition import MARKER, SECTION_TITLES
-from orbehelm.core import OrbeHelmError, canonical, digest
+from orbehelm.core import OrbeHelmError
+from orbehelm.application import execute
 from orbehelm.service import health_payload
-from orbehelm.snapshots import verify_snapshot, manifest
-from .catalog import (Conflict, latest, collect_catalog, reconcile_catalog, edit_definition,
-                      diff_releases, remove_registration)
+from orbehelm.snapshots import verify_snapshot
+from .catalog import Conflict, latest, diff_releases
 from .database import Store
 from .definition_navigation import definition_navigation, classify
-from .models import Project, ProjectConfiguration, CatalogRelease, ProjectOverrideRevision, Task, LogicalOrbe
-from .projects import (register_project, get_project, configuration_for, preview_adoption,
-                       adopt_configuration, rollback_configuration, save_override)
-from .projects import add_project_dependency, remove_project_dependency
-from .orbes import orbe_details
-from .capabilities import inventory as capability_inventory, check_capabilities
-from .library import entries, add_skill, add_mcp
-from .authentication import LoginManager, unavailable
-from .dependency_usage import registration_path, shared_usage, project_removal_details
-from .coordination import Coordinator
+from .models import CatalogRelease
+from .library import entries
+from .dependency_usage import registration_path, shared_usage
 
 MAX_REQUEST = 2 * 1024 * 1024
 
@@ -66,18 +58,16 @@ async def form_data(request):
 
 def create_app(root, config_path=None):
     store = Store(root)
-    logins = LoginManager()
 
     @asynccontextmanager
     async def lifespan(app):
         try:
             yield
         finally:
-            await run_in_threadpool(logins.close)
+            await run_in_threadpool(store.close)
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.state.store = store
-    app.state.logins = logins
     templates = Jinja2Templates(directory=str(Path(__file__).parent / 'templates'))
     app.mount('/static', StaticFiles(directory=str(Path(__file__).parent / 'static')), name='static')
 
@@ -122,7 +112,7 @@ def create_app(root, config_path=None):
             from sqlalchemy import text
             with store.read() as db:
                 version = db.scalar(text('SELECT version_num FROM alembic_version'))
-            ready = version == '0003' and latest(store) is not None
+            ready = version == '0006' and latest(store) is not None
         except Exception:
             # Readiness reports failure without exposing database internals.
             ready = False
@@ -138,29 +128,26 @@ def create_app(root, config_path=None):
 
     @app.get('/skills/new', response_class=HTMLResponse)
     @app.get('/mcp/new', response_class=HTMLResponse)
-    @app.get('/projects/{project_id}/skills/new', response_class=HTMLResponse)
-    @app.get('/projects/{project_id}/mcp/new', response_class=HTMLResponse)
     def new_registration(request: Request, project: str | None = None, project_id: str | None = None):
         kind = 'skills' if request.url.path.endswith('/skills/new') else 'mcp'
-        if project and project_id is None:
-            selected = get_project(store, project)
-            return RedirectResponse(f'/projects/{selected.id}/{kind}/new', status_code=303)
+        if project or project_id:
+            raise HTTPException(400, 'Project management is available through the CLI')
         return page(request, 'library_form.html', kind=kind, values={}, error=None,
-                    release=latest(store), project=get_project(store, project_id) if project_id else None)
+                    release=latest(store), project=None)
 
     @app.post('/skills/new')
     @app.post('/mcp/new')
-    @app.post('/projects/{project_id}/skills/new')
-    @app.post('/projects/{project_id}/mcp/new')
     async def save_registration(request: Request, project_id: str | None = None):
         form = await form_data(request)
         kind = 'skills' if request.url.path.endswith('/skills/new') else 'mcp'
         if project_id and form.get('project') not in {None, '', project_id}:
             raise HTTPException(400, 'The form does not belong to this project')
         selected_project = project_id or form.get('project')
-        project = get_project(store, selected_project) if selected_project else None
+        if selected_project:
+            raise HTTPException(400, 'Project management is available through the CLI')
+        project = None
         try:
-            await run_in_threadpool(add_skill if kind == 'skills' else add_mcp, store, form)
+            await run_in_threadpool(execute, 'shared.skill.add' if kind == 'skills' else 'shared.mcp.add', store=store, form=form)
         except OrbeHelmError as error:
             response = page(request, 'library_form.html', kind=kind, values=form, error=str(error),
                             release=latest(store), project=project)
@@ -172,8 +159,6 @@ def create_app(root, config_path=None):
                             release=latest(store), project=project)
             response.status_code = 400
             return response
-        if project:
-            return RedirectResponse(f'/projects/{project.id}?tab=updates&notice=library-added', status_code=303)
         return RedirectResponse('/' + kind + '?' + urlencode({'added': form['name']}), status_code=303)
 
     @app.get('/skills/{name}/remove', response_class=HTMLResponse)
@@ -193,25 +178,8 @@ def create_app(root, config_path=None):
     async def delete_shared_registration(request: Request, name: str):
         form = await form_data(request)
         kind = 'skills' if request.url.path.startswith('/skills/') else 'mcp'
-        await run_in_threadpool(remove_registration, store, kind, name, form.get('expected'))
+        await run_in_threadpool(execute, 'shared.remove', store=store, kind=kind, name=name, expected_release=form.get('expected'))
         return RedirectResponse('/' + kind + '?' + urlencode({'removed': name}), status_code=303)
-
-    @app.get('/projects/{project_id}/dependencies/{kind}/{name}/remove', response_class=HTMLResponse)
-    def confirm_project_removal(request: Request, project_id: str, kind: str, name: str):
-        project = get_project(store, project_id)
-        config = configuration_for(store, project)
-        references = project_removal_details(store, project, config, kind, name)
-        return page(request, 'removal.html', project=project, kind=kind, name=name,
-                    expected=config.id, references=references,
-                    back=f'/projects/{project.id}?tab={kind}', error=None)
-
-    @app.post('/projects/{project_id}/dependencies/{kind}/{name}/remove')
-    async def delete_project_addition(request: Request, project_id: str, kind: str, name: str):
-        form = await form_data(request)
-        project = get_project(store, project_id)
-        await run_in_threadpool(remove_project_dependency, store, project, kind, name, form.get('expected'))
-        return RedirectResponse(f'/projects/{project.id}?' + urlencode(
-            {'tab': kind, 'notice': 'dependency-removed'}), status_code=303)
 
     @app.exception_handler(OrbeHelmError)
     async def service_error(request, error):
@@ -220,25 +188,15 @@ def create_app(root, config_path=None):
             templates.env.get_template('error.html').render(error=str(error), status=status, csrf=request.state.csrf),
             status_code=status)
 
-    @app.get('/', response_class=HTMLResponse)
-    def dashboard(request: Request):
-        with store.read() as db:
-            projects = db.scalars(select(Project).order_by(Project.name)).all()
-            releases = db.scalars(select(CatalogRelease).order_by(CatalogRelease.sequence.desc())).all()
-        orbes = orbe_details(store)
-        release = latest(store)
-        try:
-            drafts_changed = not release or digest(canonical(manifest(collect_catalog(store.root))).encode()) != release.snapshot
-            draft_error = None
-        except (OrbeHelmError, OSError, ValueError) as error:
-            drafts_changed, draft_error = True, str(error)
-        return page(request, 'dashboard.html', projects=projects, releases=releases,
-            orbes=orbes, release=release, drafts_changed=drafts_changed, draft_error=draft_error)
+    @app.get('/')
+    def dashboard():
+        return RedirectResponse('/definitions', status_code=303)
 
     @app.post('/definitions/publish')
     async def publish(request: Request):
         await form_data(request)
-        await run_in_threadpool(reconcile_catalog, store)
+        from orbehelm.application import execute
+        await run_in_threadpool(execute, 'shared.publish', store=store)
         return RedirectResponse('/definitions', status_code=303)
 
     @app.get('/definitions', response_class=HTMLResponse)
@@ -271,7 +229,7 @@ def create_app(root, config_path=None):
         return page(request, 'definitions.html', categories=categories, active_category=active_category,
             navigation_section=category if category in {'skills', 'mcp'} else 'definitions',
             selected_entry=selected_entry, selected_file=selected_file, path=path, content=content,
-            selected=selected, releases=releases, editable=selected.id == latest(store).id and bool(path and path.startswith(('definitions/', 'registry/')) and path.endswith(('.md', '.json'))),
+            selected=selected, releases=releases, editable=selected.id == latest(store).id and bool(path),
             source_hash=listing[path]['sha256'] if path else '')
 
     @app.post('/definitions/save')
@@ -280,8 +238,9 @@ def create_app(root, config_path=None):
         for name in ('path', 'content', 'expected_release', 'expected_hash'):
             if name not in form:
                 raise HTTPException(400, 'Missing editor field')
-        await run_in_threadpool(edit_definition, store, form['path'], form['content'],
-                                form['expected_release'], form['expected_hash'])
+        from orbehelm.application import execute
+        await run_in_threadpool(execute, 'shared.edit', store=store, path=form['path'], content=form['content'],
+                                expected_release=form['expected_release'], expected_hash=form['expected_hash'])
         return RedirectResponse('/definitions?' + urlencode({'path': form['path']}), status_code=303)
 
     @app.get('/releases/{release_id}', response_class=HTMLResponse)
@@ -291,169 +250,17 @@ def create_app(root, config_path=None):
         if not release:
             raise HTTPException(404, 'Unknown release')
         changes = diff_releases(store, previous or release.parent_id, release.id) if previous or release.parent_id else []
-        return page(request, 'release.html', release=release, changes=changes)
+        return page(request, 'release.html', release=release, changes=changes, current_release=latest(store))
 
-    @app.post('/projects/register')
-    async def register(request: Request):
+    @app.post('/definitions/rollback')
+    async def rollback(request: Request):
         form = await form_data(request)
-        if not form.get('path'):
-            raise HTTPException(400, 'Project path is required')
-        await run_in_threadpool(reconcile_catalog, store)
-        from orbehelm.configuration import load
-        _, aliases = load(config_path)
-        project = await run_in_threadpool(register_project, store, form['path'], aliases)
-        return RedirectResponse('/projects/' + project.id, status_code=303)
-
-    @app.get('/projects/{project_id}', response_class=HTMLResponse)
-    def project_detail(request: Request, project_id: str, target: str | None = None,
-                       selection: str | None = None, agent: str | None = None,
-                       tab: str = 'overview', notice: str | None = None):
-        if tab not in {'overview', 'skills', 'mcp', 'instructions', 'updates', 'history', 'orbes', 'tasks'}:
-            raise HTTPException(404, 'Unknown project section')
-        project = get_project(store, project_id)
-        config = configuration_for(store, project)
-        with store.read() as db:
-            configurations = db.scalars(select(ProjectConfiguration).where(ProjectConfiguration.project_id == project.id)
-                                       .order_by(ProjectConfiguration.created_at.desc())).all()
-            releases = db.scalars(select(CatalogRelease).order_by(CatalogRelease.sequence.desc())).all()
-            override_rows = {name: db.get(ProjectOverrideRevision, value) for name, value in config.overrides.items()}
-            selected_release = db.get(CatalogRelease, config.release_id)
-            tasks = db.scalars(select(Task).where(Task.project_id == project.id).order_by(Task.created_at.desc())).all()
-        source = verify_snapshot(store.root, selected_release.snapshot)
-        profiles = sorted(path.stem for path in (source / 'definitions/profiles').glob('*.json'))
-        template = MARKER + '\n\n# Project Profile Override\n\n' + '\n\n'.join('## ' + heading for heading in SECTION_TITLES) + '\n'
-        preview = preview_adoption(store, project, target or latest(store).id)
-        capabilities = capability_inventory(store, project, config, selection or None, agent)
-        kind = 'skills' if tab == 'skills' else 'mcp'
-        library_items = entries(store, kind, selected_release)
-        available_names = {item['name'] for item in library_items}
-        pending_library_items = [item for item in entries(store, kind)
-                                 if item['name'] not in available_names]
-        for server in capabilities['mcp']:
-            server['login_unavailable'] = unavailable(capabilities['agent'], capabilities['runtime'], server['transport'])
-        return page(request, 'project.html', project=project, config=config, configurations=configurations,
-            releases=releases, preview=preview, overrides=override_rows, profiles=profiles,
-            capabilities=capabilities, tab=tab, notice=notice, selected_release=selected_release,
-            library_items=library_items, pending_library_items=pending_library_items,
-            tasks=tasks,
-            override_template=template, orbes=orbe_details(store, project_id=project.id))
-
-    def task_actor(project_id, task_id):
-        with store.read() as db:
-            task = db.get(Task, task_id)
-            if not task or task.project_id != project_id:
-                raise HTTPException(404, 'Task not found in this project')
-            actor_id = task.owner_id or db.scalar(select(LogicalOrbe.id).where(LogicalOrbe.task_id == task.id))
-            if not actor_id:
-                raise HTTPException(404, 'Task has no logical orbes')
-            return actor_id
-
-    @app.get('/projects/{project_id}/tasks/{task_id}', response_class=HTMLResponse)
-    def task_detail(request: Request, project_id: str, task_id: str):
-        actor_id = task_actor(project_id, task_id)
-        return page(request, 'task.html', project=get_project(store, project_id),
-                    task=Coordinator(store, actor_id).context())
-
-    @app.get('/projects/{project_id}/tasks/{task_id}/artifacts/{artifact_id}')
-    def task_artifact(project_id: str, task_id: str, artifact_id: str):
-        actor_id = task_actor(project_id, task_id)
-        return JSONResponse(Coordinator(store, actor_id).read_artifact(artifact_id))
-
-    @app.post('/projects/{project_id}/check-capabilities')
-    async def check_project_capabilities(request: Request, project_id: str):
-        form = await form_data(request)
-        project = get_project(store, project_id)
-        config = configuration_for(store, project)
-        if config.id != form.get('expected'):
-            raise Conflict('Project changed; refresh before checking')
-        selection, agent = form.get('selection'), form.get('agent')
-        if not selection or not agent:
-            raise HTTPException(400, 'Selection and agent are required')
-        scope = form.get('tab') if form.get('tab') in {'skills', 'mcp'} else 'all'
-        await run_in_threadpool(check_capabilities, store, project, config, selection, agent, scope)
-        return RedirectResponse('/projects/' + project.id + '?' + urlencode(
-            {'selection': selection, 'agent': agent,
-             'tab': form.get('tab') if form.get('tab') in {'skills', 'mcp'} else 'skills'}), status_code=303)
-
-    @app.post('/projects/{project_id}/dependencies')
-    async def enable_dependency(request: Request, project_id: str):
-        form = await form_data(request)
-        project = get_project(store, project_id)
-        await run_in_threadpool(add_project_dependency, store, project, form.get('kind'),
-                                form.get('name', ''), form.get('expected'))
-        return RedirectResponse(f'/projects/{project.id}?' + urlencode(
-            {'tab': form['kind'], 'notice': 'dependency-added'}), status_code=303)
-
-    @app.post('/projects/{project_id}/mcp-login')
-    async def start_mcp_login(request: Request, project_id: str):
-        form = await form_data(request)
-        project = get_project(store, project_id)
-        config = configuration_for(store, project)
-        if config.id != form.get('expected'):
-            raise Conflict('Project changed; refresh before signing in')
-        if not form.get('selection') or not form.get('agent'):
-            raise HTTPException(400, 'Choose an agent configuration first')
-        data = await run_in_threadpool(capability_inventory, store, project, config,
-                                       form['selection'], form['agent'])
-        server = next((item for item in data['mcp'] if item['name'] == form.get('server')), None)
-        if server is None:
-            raise HTTPException(400, 'This server is not enabled in the selected configuration')
-        reason = unavailable(data['agent'], data['runtime'], server['transport'])
-        if reason:
-            raise OrbeHelmError(reason)
-        job = await run_in_threadpool(logins.start, project, data['agent'], server['name'],
-                                      data['runtime'], data['output'], selection=data['selection'])
-        return RedirectResponse(f'/projects/{project.id}/mcp-login/{job["id"]}', status_code=303)
-
-    @app.get('/projects/{project_id}/mcp-login/{job_id}', response_class=HTMLResponse)
-    def mcp_login_status(request: Request, project_id: str, job_id: str):
-        return page(request, 'authentication.html', project=get_project(store, project_id),
-                    job=logins.get(project_id, job_id))
-
-    @app.post('/projects/{project_id}/mcp-login/{job_id}/cancel')
-    async def cancel_mcp_login(request: Request, project_id: str, job_id: str):
-        await form_data(request)
-        logins.cancel(project_id, job_id)
-        return RedirectResponse(f'/projects/{project_id}/mcp-login/{job_id}', status_code=303)
-
-    @app.post('/projects/{project_id}/{action}')
-    async def change_project(request: Request, project_id: str, action: str):
-        form = await form_data(request)
-        project = await run_in_threadpool(get_project, store, project_id)
-        expected = form.get('expected', '')
-        if action == 'adopt':
-            await run_in_threadpool(adopt_configuration, store, project, form.get('release', ''), expected)
-        elif action == 'rollback':
-            await run_in_threadpool(rollback_configuration, store, project, form.get('revision', ''), expected)
-        elif action == 'override':
-            await run_in_threadpool(save_override, store, project, form.get('profile', ''), form.get('content', ''), expected)
-        elif action == 'remove-override':
-            config = configuration_for(store, project)
-            overrides = dict(config.overrides)
-            overrides.pop(form.get('profile', ''), None)
-            await run_in_threadpool(adopt_configuration, store, project, config.release_id, expected, overrides=overrides)
-        elif action == 'refresh-context':
-            from orbehelm.configuration import load
-            _, aliases = load(config_path)
-            config = configuration_for(store, project)
-            await run_in_threadpool(adopt_configuration, store, project, config.release_id, expected,
-                                    refresh_context=True, aliases=aliases)
-        else:
-            raise HTTPException(404, 'Unknown project action')
-        tab = {'adopt': 'updates', 'rollback': 'history', 'override': 'instructions',
-               'remove-override': 'instructions', 'refresh-context': 'instructions'}[action]
-        return RedirectResponse('/projects/' + project.id + '?' + urlencode({'tab': tab, 'notice': 'saved'}), status_code=303)
-
-    @app.get('/orbes', response_class=HTMLResponse)
-    def orbes(request: Request, project: str | None = None):
-        return page(request, 'orbes.html', orbes=orbe_details(store, project_id=project))
-
-    @app.get('/orbes/{orbe_id}', response_class=HTMLResponse)
-    def orbe_detail(request: Request, orbe_id: str):
-        rows = orbe_details(store, orbe_id=orbe_id)
-        if not rows:
-            raise HTTPException(404, 'Unknown orbe')
-        return page(request, 'orbe.html', orbe=rows[0])
+        from orbehelm.application import execute
+        if not form.get('revision') or not form.get('expected'):
+            raise HTTPException(400, 'Select a history revision and current shared revision')
+        await run_in_threadpool(execute, 'shared.rollback', store=store,
+                               revision=form['revision'], expected=form['expected'])
+        return RedirectResponse('/definitions', status_code=303)
 
     return app
 

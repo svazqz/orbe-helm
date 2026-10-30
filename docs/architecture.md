@@ -1,146 +1,109 @@
-# OrbeHelm Alpha Architecture
+# OrbeHelm architecture
 
-The portable core resolves desired orbe configuration. Adapters translate it into host files and invocation arguments. Definitions remain authoritative; generated bundles are disposable outputs.
+Schema `0006` adds stable project/profile/key workstreams, isolated specialization
+contexts, typed audience-scoped knowledge and independent parallel review/QA gates.
+See [persistent workflows](persistent-workflows.md) for current execution defaults,
+authorization and migration. It supersedes older raw-observation/sequential-gate
+descriptions below.
 
-## Resolution and caching
+Managed chat now includes an [owned KUnit memory engine](knowledge-memory.md).
+Domain/application memory rules are separate from SQLite canonical persistence,
+rebuildable FTS/vector projections, and explicitly configured local inference.
+Its schema is `0006`; the wider independent-core extraction remains in progress.
 
-Resolution reads base, profile, specialization, skillsets, and project context. It validates structural fields and instruction sections, follows local skill dependencies, rejects dependency cycles, and records source hashes. The resolved configuration includes original source content, a deterministic `composed_instructions` document, and a SHA-256 fingerprint. No Git repository or commit is required.
+OrbeHelm has a portable source resolver and a local application service. The optional
+HTTP editor is a client of that service; normal launches and task delegation require
+no HTTP listener. The `application` package provides typed Request/Result contracts,
+an operation registry, and injected authorization/repository ports. Its compatibility
+`execute` export routes existing operations through `bootstrap.py` and the transitional
+`infrastructure/compatibility/dispatcher.py`. Full repository/use-case extraction is
+in progress; see [implemented boundaries and remaining work](independent-core-progress.md).
 
-The CLI reads optional user defaults and skill aliases through `configuration.py` before portable resolution. Direct skill selections join definition dependencies. `remote_skills.py` reads verified installed trees or downloads public sources into bounded process memory; resolution does not install them. Builds persist missing trees under the dependency cache and record a URL-to-tree lookup. A cold dry-run may read remote content to calculate its hash but never creates or changes files. Source URLs, resource hashes, and executable flags participate in the resolved fingerprint; unselected aliases and configuration-file formatting do not.
+## Sources and composition
 
-The portable composer in `src/orbehelm/composition.py` applies a fixed common section template. Each source section appends by default or explicitly overrides the complete accumulated section. Empty additions inherit; empty overrides clear. Rendering emits each nonempty final section once, without authoring markers or per-source titles. Optional plain project and skillset context remains additive after these sections. Skill bodies and resource paths are appended during build. The same final instruction bundle is delivered by every adapter; adapters do not interpret section operations. See [Configuration](configuration.md#common-instruction-template) for the format and migration rules.
+`core.py` orchestrates source reads and builds; pure composition, schema checks, and
+dependency traversal live in `domain/definitions`. Structured instructions follow the
+seven-section template. Codex/Claude rendering and native command/event translation
+live in provider plugins; `adapters.py` retains compatibility orchestration and the
+legacy OpenCode renderer. Generated builds hash extracted implementation sources.
+Definitions are authoritative; generated files are immutable build artifacts.
 
-The fingerprint covers selected content, full skill resources, MCP definitions, project and source locations, generator version, and implementation bytes. A separate build identifier includes the selected adapter. Identical inputs reuse generated output. Relevant edits, resource changes, and implementation changes select a different build directory. Edits to unrelated profiles do not affect the selected configuration.
+`product/catalog.py` validates source bytes and publishes immutable snapshots and
+release membership. Shared publication automatically appends source-only project
+configuration revisions, preserving context, aliases, file replacements, and legacy
+section overrides. It does not contact remote dependencies or rebuild every project.
+Effective combinations are resolved and built when used. Shared history rollback
+publishes restored bytes as a new release, retaining the audit chain.
 
-Builds verify cached output checksums and regenerate corrupted output. Local skill installations are also verified. A POSIX file lock serializes installation and generation within one root; staged directories are renamed after successful generation. Existing build versions remain available. Alpha does not automatically prune builds or orbe records.
+`product/definition_operations.py` maps typed definition names to owned source files.
+Project-local replacements/tombstones are immutable data on project configuration
+revisions; `catalog_snapshot` materializes the shared source plus that overlay.
+Reset removes the local replacement so the current shared file applies. Unknown
+fields, invalid instructions, missing dependencies, traversal, symlinks, and stale
+expected revisions fail before activation. New generic overlays replace files;
+legacy section-level overrides remain readable.
 
-Generated artifacts include merged instructions, selected skill resources, resolved configuration, agent-specific configuration, capability metadata, and an output-checksum manifest. No timestamps are included in deterministic build output.
+## Storage and concurrency
 
-## Adaptation
+SQLite and reviewed Alembic migrations hold project/configuration identity, source
+history, build indexes, launch records, coordination state, and conversation events.
+SQLAlchemy rows live in `infrastructure/persistence/models.py`; `product.models`
+forwards existing names. Immutable domain entities are separate from these rows.
+`Store` checks the current schema. Setup/update/migrate upgrades explicitly; launches
+do not generate or apply schema migrations. Database upgrades back up existing data.
 
-| Agent | Instruction delivery | MCP configuration | Authentication |
-| --- | --- | --- | --- |
-| Codex | Additional developer instructions in generated TOML | Per-orbe CODEX_HOME config | Explicit wrapper login store referenced by orbe homes |
-| Claude | Append system prompt file CLI option | Explicit strict MCP config | Host CLI authentication |
-| OpenCode | Instruction file referenced in runtime JSON | Runtime JSON configuration | Host CLI authentication |
+Verified filesystem snapshots hold source bytes and skill resources. They are written
+before database references. Multi-file shared mutations use a publication journal that
+recovers expected writes while rejecting conflicting external source edits. Filesystem
+product locks serialize publication/configuration mutations; no SQL transaction spans
+a network download or model conversation. Native slots and managed conversations have
+separate lifetime locks. Keyed developer turns retain workspace writer exclusivity.
 
-Codex launches with a dedicated orbe home and without the shared daemon. The wrapper login flow uses its own private credential directory and does not import global config or credentials. Normal agent permissions remain in force; the wrapper does not pass approval-bypass flags.
+Installed applications retain the configured runtime base outside application code;
+checkout use retains state in the checkout. Legacy names and paths remain readable.
+No development command modifies global agent configuration or imports credentials.
 
-Claude and OpenCode adapters have generated-output and mocked-launch coverage. Their binaries were unavailable during initial validation, so live compatibility remains unverified. Codex generated TOML has additionally been parsed by the installed CLI without starting a model conversation.
+## Conversations and native adapters
 
-## Isolation boundaries
+`conversations.py` stores an append-only, provider-independent event ledger keyed by
+project/profile/specialization/task selection, excluding agent choice. Explicit working
+checkpoints have their own audit events. `managed.py` owns terminal input and structured
+Claude/Codex execution, captures events incrementally, and links agent-specific native
+attempts to that ledger. It preserves native permission policy; interactive tool-approval
+callbacks are not yet implemented in this structured runner. Explicit process-scoped
+Claude tool grants are audited and included in the managed policy digest.
 
-This is configuration separation, not a security sandbox or an exclusive-context guarantee. Managed policy, built-in capabilities, project files, environment variables, and host discovery may add context. OpenCode explicitly merges configuration layers. Inline skill delivery does not disable native skill discovery.
+`sessions.py` computes a semantic policy digest, independent of timestamps, physical
+paths, unrelated definitions, and labels. Exact-ID resume is permitted only for an
+unchanged active policy/agent. Changed rules or agent choice start a fresh native
+conversation and inject a bounded historical handoff. Native transcripts and ledger
+history are retained; this does not preserve an identical model context window.
 
-Every adapter reports this limitation. `--strict` fails before launch rather than making an unsupported guarantee. Full isolation requires additional host-specific discovery control and integration testing.
+`native_capture.py` offers best-effort transcript capture for native interactive
+launches. Coverage/failures are recorded separately from structured mode. No terminal
+screen scraping, global home scan, transcript rewrite, or hidden reasoning transfer is
+performed. Read [conversation behavior](conversation-memory.md) for limits and commands.
 
-## Installed application and server readiness
+Task coordination remains the SQLite/stdio MCP architecture. Candidates and delegated
+review/QA inputs retain their submitted configuration even after a new shared release.
+Accepted project knowledge and task memory are distinct from conversational history.
 
-`setup.sh` installs an independent code copy, private virtual environment, definitions,
-registry, and operational database under `~/bin/orbehelm`. A versioned
-`installation.json` selects `~/.orbehelm` for runtime storage. `layout.py` keeps
-runtime paths separate from generated build and database paths; checkout deployments
-without a manifest retain local `state/` storage. Capability checks validate native
-homes against the selected runtime storage rather than the application root.
+## Optional editor and Herdr
 
-`oh server start` serves the local UI and `/healthz` in the foreground. `service.py`
-uses bounded, timeout-limited, proxy-free loopback requests and rejects redirects,
-version mismatches, and application/runtime identity mismatches. CLI launch checks
-precede mutations; adapter and child-delegation checks guard the actual launch
-boundaries. Dry runs remain independent of the server. Orchestration continues to
-use the existing SQLite/stdio MCP services; server availability is a launch
-prerequisite, not a transport rewrite or a process-lifetime guarantee.
+`product/web.py` exposes shared definitions, registry forms, history, and rollback.
+Project, task, authentication-job, and orbe management belong to the CLI. Loopback
+Host/Origin validation, bounded forms, CSRF, and HTML escaping remain enforced.
+`/healthz` and `server status` describe the editor; their availability does not gate work.
 
-## Orbe state
+`herdr.py` prefers the pane owner's `HERDR_BIN_PATH`, retains socket routing, and sets
+source-scoped display-agent/title metadata. Metadata is cleared when native work exits.
+It never claims native working/idle status. Read-only integration diagnostics report
+binary discovery and supported metadata flags. Live rendering is a separate check.
 
-Each stable orbe records its identity (canonical project, agent, profile, specialization), build, working directory, launch count, status, and exit code under the selected runtime base in `orbes/`. Active pointers under `orbe-keys/` select the current orbe for each identity. A nonblocking POSIX lock is held for the child lifetime to prevent concurrent launches. `--new-orbe` rotates the active pointer without deleting prior state. Build changes do not rotate orbe identity. Initial prompts and environment values are not persisted in these records. Child agents may maintain their own histories and logs. An interrupted wrapper process can leave a stale running record; automatic reconciliation is not implemented.
+## Verification boundary
 
-Generated configuration records source content and absolute paths. Treat it according to the sensitivity of the source instructions. Credentials remain in the dedicated auth store or the host's own authentication system.
-
-## Official references
-
-- [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
-- [Claude CLI reference](https://code.claude.com/docs/en/cli-reference)
-- [OpenCode configuration](https://docs.opencode.ai/docs/config/)
-- [OpenCode MCP servers](https://opencode.ai/docs/mcp-servers/)
-
-Documentation was consulted on October 27, 2026. Compatibility must be checked when host CLIs change. No provider SDK or model API is called by the wrapper itself.
-
-Resume commands follow [Claude CLI documentation](https://code.claude.com/docs/en/cli-reference) and [OpenCode CLI documentation](https://opencode.ai/docs/cli/). Codex `resume --last` was verified through the installed CLI help without starting a model conversation. Claude uses a dedicated config directory; OpenCode uses dedicated XDG data, state, and cache directories. These hosts may require authentication in their runtime homes. Their live compatibility remains unverified.
-
-## Project product layer
-
-The optional migration cutover adds FastAPI/Jinja management views and SQLAlchemy
-persistence backed by SQLite. `oh migrate` applies reviewed Alembic migrations
-and imports historical orbe metadata without moving homes or reading credentials.
-The portable resolver imports neither FastAPI nor SQLAlchemy. CLI and HTTP routes
-call the same catalog/project/orbe application services.
-
-Global source remains in definitions/registry. Exact content-addressed snapshots under
-`state/revisions/` preserve source bytes and executable bits; catalog releases and
-relational membership index them. Project configuration revisions pin one catalog,
-project-context snapshot, aliases, and override revisions. Per-selection locks retain
-resolved dependency versions; selected skill trees also have recoverable snapshots
-independent of the installer cache. The database contains no credential values or
-conversation bodies.
-
-New derived artifacts live under `state/projects/<project-id>/builds/<agent>/<hash>/`.
-The effective fingerprint normalizes physical catalog/context locations and includes
-only selected source/dependency inputs and renderer implementation. Unrelated global
-edits do not invalidate a selected build. Old top-level generated/ artifacts remain
-historical references. Builds are immutable; per-orbe native homes remain mutable.
-
-A product file lock coordinates edits, selection locks, and project adoption. The
-catalog publisher writes snapshots before SQL references and journals UI working-file
-materialization. Recovery refuses conflicting external edits rather than overwriting
-them. Adoption resolves and stages already-realized configurations before atomically
-committing one project pointer and associated build/selection records. Runtime homes
-are refreshed only on launch, never by a web request.
-
-Orbes retain existing UUIDs and compatible slot locks. Each new launch captures
-its exact project revision/build in a separate SQL row. Imported old attempts have
-unknown timestamps and configuration references. UI runtime status checks whether the
-slot lock is held; this is wrapper coordination, not proof that no orphan child process
-exists. Pending changes compare effective fingerprints when provenance is available.
-
-Local HTTP uses bounded URL-encoded forms with double-submit CSRF tokens, loopback
-Host/Origin checks, escaped templates, and restrictive content security policy. There
-is no arbitrary file-reading endpoint, browser terminal, general command runner, or
-remote deployment mode. Dedicated CSRF-protected MCP login routes run fixed agent
-commands in matching native runtime homes. Bounded login jobs live in memory,
-discard stdout/stderr, and terminate on cancellation, timeout, or app shutdown.
-Model orbes and adapter isolation retain existing limits.
-
-Library forms create one registration through catalog validation and the existing
-publication journal; new-source recovery also handles files that did not previously
-exist. Existing projects keep their selected releases. Project dependency assignment
-updates only `orbehelm.project.json`, retains other snapshotted context, and stages
-builds before committing a project revision. A per-project journal restores or
-finishes interrupted context writes; conflicting external edits are preserved.
-
-The product implementation passes its automated integration suite, including actual
-Alembic upgrades/schema comparison and ASGI form workflows, on Python 3.13/macOS.
-An isolated checkout also exercised CLI migration, backup, fake-agent orbe reuse,
-and write-free resume previews. Listener binding and a real browser smoke test remain
-unverified because of execution-environment limits. Read docs/validation.md for details.
-
-## Capability removal
-
-`dependency_usage.py` inspects shared declarative graphs and active pinned project
-requirements without network calls or native credential reads. Current selection
-locks, latest active native launch selections, transitive skill dependencies, alias
-shadowing, and inherited origins participate in the usage check. Historical-only
-builds do not block logical removal; unknown legacy provenance fails closed.
-
-Shared removal holds the product lock, checks the expected catalog and clean working
-sources, verifies current usage again, and publishes an immutable release without
-the registration. The publication journal supports a null after-hash as a source
-tombstone. Recovery removes only the expected old source file and preserves external
-conflicting edits. Old snapshots and local skill source directories remain intact.
-
-Project removal uses the same staged configuration and context-write journal as
-project addition. It removes only a direct project requirement and re-resolves every
-realized selection. Inherited or independently selected requirements remain. The
-UI separates explicit additions from effective requirements and previews remaining
-origins before submission. No schema migration, cascading edits, cache pruning,
-credential revocation, or native conversation mutation is involved.
+The automated suite uses disposable databases/homes and fake native processes. It
+checks migration/model parity, shared inheritance, override/reset, failed mutation
+recovery, conversation capture/handoff, exact resume and policy refresh, read-only
+operations, workspace locks, UI security, and integration fallback. It does not prove
+authenticated model behavior or exclusive context isolation for any native adapter.

@@ -3,34 +3,21 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
-import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import shutil
 import tempfile
-from urllib.parse import urlsplit
 
 from . import __version__
 
 
-class OrbeHelmError(Exception):
-    """An actionable configuration or runtime error."""
-
-
-def canonical(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-
-
-def digest(data):
-    return hashlib.sha256(data).hexdigest()
-
-
-def identifier(value):
-    if not isinstance(value, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", value):
-        raise OrbeHelmError(f"Invalid identifier: {value!r}; use lowercase letters, digits, and hyphens")
-    return value
+from .domain.shared.errors import OrbeHelmError
+from .domain.shared.values import canonical, digest, identifier
+from .domain.definitions.validation import strings, keys, validate_mcp
+from .domain.definitions.dependencies import DependencyWalk
+from .infrastructure.filesystem.implementation import implementation_hashes
 
 
 def contained(root, relative):
@@ -52,17 +39,6 @@ def read_json(path):
         raise OrbeHelmError(f"{path}: expected an object with schema_version = 1")
     return result
 
-
-def strings(value, label):
-    if not isinstance(value, list) or any(not isinstance(x, str) or not x for x in value):
-        raise OrbeHelmError(f"{label} must be a list of nonempty strings")
-    return value
-
-
-def keys(data, allowed, label):
-    extra = set(data) - set(allowed) - {"schema_version"}
-    if extra:
-        raise OrbeHelmError(f"{label}: unknown fields: {', '.join(sorted(extra))}")
 
 
 def tree(path):
@@ -90,28 +66,6 @@ def locked(root):
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         yield
 
-
-def validate_mcp(config, label):
-    keys(config, ["type", "command", "args", "url", "env"], label)
-    env = config.get("env", {})
-    if not isinstance(env, dict) or any(not isinstance(k, str) or not isinstance(v, str)
-                                       or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", k)
-                                       or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", v)
-                                       for k, v in env.items()):
-        raise OrbeHelmError(f"MCP {label}: env must map server variable names to host variable names")
-    if config.get("type") == "stdio":
-        if not isinstance(config.get("command"), str) or not config["command"]:
-            raise OrbeHelmError(f"MCP {label}: command is required")
-        strings(config.get("args", []), "MCP args")
-        if "url" in config:
-            raise OrbeHelmError(f"MCP {label}: stdio cannot define url")
-    elif config.get("type") == "http":
-        if not isinstance(config.get("url"), str) or urlsplit(config["url"]).scheme not in {"http", "https"}:
-            raise OrbeHelmError(f"MCP {label}: an HTTP URL is required")
-        if env or "command" in config or "args" in config:
-            raise OrbeHelmError(f"MCP {label}: HTTP auth and command fields are not supported in alpha")
-    else:
-        raise OrbeHelmError(f"MCP {label}: type must be stdio or http")
 
 
 def resolve(root, profile="developer", spec=None, skillsets=(), project=None, skills=(), skill_sources=None,
@@ -172,15 +126,11 @@ def resolve(root, profile="developer", spec=None, skillsets=(), project=None, sk
     from .composition import compose
     resolved["composed_instructions"] = compose(resolved["instructions"])
 
-    visiting, visited = set(), set()
+    dependency_walk = DependencyWalk()
 
     def skill(name):
-        identifier(name)
-        if name in visiting:
-            raise OrbeHelmError(f"Cyclic skill dependency involving {name}")
-        if name in visited:
+        if not dependency_walk.enter(name):
             return
-        visiting.add(name)
         if name in skill_sources:
             config = {"source": skill_sources[name]}
         else:
@@ -204,8 +154,7 @@ def resolve(root, profile="developer", spec=None, skillsets=(), project=None, sk
             skill(dependency)
         requested_mcp.extend(strings(config.get("mcp", []), "skill MCP dependencies"))
         resolved["skills"].append(definition)
-        visiting.remove(name)
-        visited.add(name)
+        dependency_walk.leave(name)
 
     for name in requested_skills:
         skill(name)
@@ -218,8 +167,7 @@ def resolve(root, profile="developer", spec=None, skillsets=(), project=None, sk
         validate_mcp(config, name)
         resolved["mcp"][name] = config
     # Include implementation bytes so code changes invalidate generated output too.
-    resolved["implementation"] = {p.name: digest(p.read_bytes()) for p in sorted(Path(__file__).parent.glob("*.py"))
-                                  if p.name in {"core.py", "composition.py", "adapters.py", "remote_skills.py", "snapshots.py"}}
+    resolved["implementation"] = implementation_hashes()
     resolved["fingerprint"] = digest(canonical(resolved).encode())
     return resolved
 

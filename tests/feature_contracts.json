@@ -1,0 +1,747 @@
+{
+  "schema_version": 1,
+  "baseline_tests": 159,
+  "cli_commands": [
+    "run",
+    "chat",
+    "conversations",
+    "orbes",
+    "get",
+    "add",
+    "remove",
+    "override",
+    "reset",
+    "set",
+    "history",
+    "diff",
+    "rollback",
+    "resolve",
+    "build",
+    "doctor",
+    "list",
+    "skills",
+    "status",
+    "auth",
+    "migrate",
+    "web",
+    "server",
+    "projects",
+    "definitions",
+    "tasks",
+    "memory",
+    "mcp-serve",
+    "memory-serve"
+  ],
+  "application_operations": [
+    "chat",
+    "configuration.build",
+    "configuration.resolve",
+    "conversation",
+    "coordination",
+    "definition",
+    "launch",
+    "library.list",
+    "orbes",
+    "product",
+    "shared.edit",
+    "shared.mcp.add",
+    "shared.publish",
+    "shared.remove",
+    "shared.rollback",
+    "shared.skill.add",
+    "skills.install",
+    "task.call",
+    "task.delegate"
+  ],
+  "features": [
+    {
+      "id": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "existing_tests": [
+        "test_cli_memory.LocalMemoryTests.test_shared_changes_reach_projects_and_local_reset_inherits_latest",
+        "test_cli_memory.LocalMemoryTests.test_shared_rollback_is_new_history_and_updates_existing_projects",
+        "test_cli_memory.LocalMemoryTests.test_invalid_stale_and_unowned_changes_leave_revision_unchanged",
+        "test_cli_memory.LocalMemoryTests.test_add_remove_and_reset_project_definition",
+        "test_cli_memory.LocalMemoryTests.test_package_add_validates_complete_profile_and_owned_file",
+        "test_cli_memory.LocalMemoryTests.test_get_and_managed_dry_run_are_write_free_without_network",
+        "test_cli_memory.LocalMemoryTests.test_agent_switch_preserves_history_without_replaying_tools",
+        "test_cli_memory.LocalMemoryTests.test_unchanged_policy_resumes_exact_id_changed_policy_refreshes",
+        "test_cli_memory.LocalMemoryTests.test_capture_failure_retains_user_request_and_reports_failed_attempt",
+        "test_cli_memory.LocalMemoryTests.test_pagination_scope_and_duplicate_import",
+        "test_cli_memory.LocalMemoryTests.test_managed_cli_single_turn_records_history_and_launch_without_http",
+        "test_cli_memory.LocalMemoryTests.test_native_policy_refresh_keeps_auth_home_and_imports_existing_history",
+        "test_cli_memory.LocalMemoryTests.test_native_message_normalization_excludes_stale_rules_and_nested_handoffs",
+        "test_cli_memory.LocalMemoryTests.test_shared_editor_restore_is_csrf_guarded_and_reaches_projects",
+        "test_cli_memory.LocalMemoryTests.test_tool_event_volume_does_not_hide_the_user_goal_from_handoff",
+        "test_cli_memory.LocalMemoryTests.test_typed_registration_validation_rejects_missing_source_and_literal_credentials",
+        "test_cli_memory.LocalMemoryTests.test_explicit_claude_tool_grants_refresh_policy_without_global_changes",
+        "test_cli_memory.LocalMemoryTests.test_chat_tool_grants_are_explicit_audited_and_clearable"
+      ],
+      "replacement_suite": "tests/contracts"
+    },
+    {
+      "id": "resolver",
+      "scope": "selection",
+      "effects": "read/build",
+      "existing_tests": [
+        "test_orbehelm.OrbeHelmTests.test_composition_and_dependency_order",
+        "test_orbehelm.OrbeHelmTests.test_cache_reuse_change_and_tamper_repair",
+        "test_orbehelm.OrbeHelmTests.test_skill_resources_invalidate_and_are_copied",
+        "test_orbehelm.OrbeHelmTests.test_transitive_dependency_order_and_corrupt_install_repair",
+        "test_orbehelm.OrbeHelmTests.test_skill_build_json_resource_is_checked_for_tampering",
+        "test_orbehelm.OrbeHelmTests.test_authentication_uses_wrapper_store",
+        "test_orbehelm.OrbeHelmTests.test_unicode_instructions_produce_valid_toml",
+        "test_orbehelm.OrbeHelmTests.test_cycle_rejected",
+        "test_orbehelm.OrbeHelmTests.test_missing_profile_unknown_fields_and_traversal",
+        "test_orbehelm.OrbeHelmTests.test_symlink_skill_rejected",
+        "test_orbehelm.OrbeHelmTests.test_pin_mismatch_rejected",
+        "test_orbehelm.OrbeHelmTests.test_project_layer_and_adapter_artifacts",
+        "test_orbehelm.OrbeHelmTests.test_mcp_translation_and_environment_not_persisted",
+        "test_orbehelm.OrbeHelmTests.test_run_records_exit_and_sets_home_without_global_changes",
+        "test_orbehelm.OrbeHelmTests.test_interactive_launch_passes_selection_label_to_herdr",
+        "test_orbehelm.OrbeHelmTests.test_known_sessions_resume_exact_ids_and_unknown_adapters_start_fresh",
+        "test_orbehelm.OrbeHelmTests.test_session_metadata_reaches_children_and_tracks_reuse_and_rotation",
+        "test_orbehelm.OrbeHelmTests.test_existing_session_dry_run_is_read_only_and_can_preview_fresh_launch",
+        "test_orbehelm.OrbeHelmTests.test_session_identity_ignores_build_changes_and_separates_profiles",
+        "test_orbehelm.OrbeHelmTests.test_session_lock_rejects_concurrent_launch_and_releases_after_failure",
+        "test_orbehelm.OrbeHelmTests.test_strict_refuses_launch_and_doctor_detects_missing_cli",
+        "test_orbehelm.OrbeHelmTests.test_cli_default_launch_is_dry_runnable_and_errors_are_clean",
+        "test_orbehelm.OrbeHelmTests.test_dry_run_prints_a_quoted_command_for_prebuilt_configurations",
+        "test_orbehelm.OrbeHelmTests.test_dry_run_never_creates_or_modifies_files",
+        "test_orbehelm.OrbeHelmTests.test_dry_run_does_not_authenticate_or_run_other_commands",
+        "test_orbehelm.OrbeHelmTests.test_every_definition_uses_the_common_template",
+        "test_orbehelm.OrbeHelmTests.test_section_append_override_clear_and_empty_inheritance",
+        "test_orbehelm.OrbeHelmTests.test_section_overrides_follow_specialization_skillset_and_project_order",
+        "test_orbehelm.OrbeHelmTests.test_malformed_sections_fail_during_resolution",
+        "test_orbehelm.OrbeHelmTests.test_fenced_code_and_subheadings_are_preserved",
+        "test_orbehelm.OrbeHelmTests.test_plain_optional_context_is_preserved_and_bad_marker_is_rejected",
+        "test_orbehelm.OrbeHelmTests.test_all_profiles_build_cleanly_for_every_adapter"
+      ],
+      "replacement_suite": "tests/domain"
+    },
+    {
+      "id": "configuration",
+      "scope": "installation/project",
+      "effects": "read/write",
+      "existing_tests": [
+        "test_configuration.ConfigurationTests.test_missing_default_config_is_optional_and_read_only",
+        "test_configuration.ConfigurationTests.test_home_defaults_cli_precedence_and_empty_selection_override",
+        "test_configuration.ConfigurationTests.test_relative_paths_custom_config_and_environment_precedence",
+        "test_configuration.ConfigurationTests.test_invalid_configuration_is_rejected",
+        "test_configuration.ConfigurationTests.test_strict_default_can_be_overridden_explicitly",
+        "test_configuration.ConfigurationTests.test_local_alias_direct_selection_and_listing",
+        "test_configuration.ConfigurationTests.test_remote_build_installs_references_and_reuses_offline_cache",
+        "test_configuration.ConfigurationTests.test_cold_remote_dry_run_writes_nothing_and_predicts_build_hash",
+        "test_configuration.ConfigurationTests.test_manual_mapped_install_and_corrupted_cache_repair",
+        "test_configuration.ConfigurationTests.test_direct_skill_keeps_registered_transitive_dependencies",
+        "test_configuration.ConfigurationTests.test_standalone_https_skill_and_pins",
+        "test_configuration.ConfigurationTests.test_invalid_remote_definitions_fail_without_installing",
+        "test_configuration.ConfigurationTests.test_unsafe_archives_are_rejected",
+        "test_configuration.ConfigurationTests.test_download_response_limit"
+      ],
+      "replacement_suite": "tests/interfaces"
+    },
+    {
+      "id": "conversations",
+      "scope": "project/conversation",
+      "effects": "read/write/process",
+      "existing_tests": [
+        "test_cli_memory.LocalMemoryTests.test_shared_changes_reach_projects_and_local_reset_inherits_latest",
+        "test_cli_memory.LocalMemoryTests.test_shared_rollback_is_new_history_and_updates_existing_projects",
+        "test_cli_memory.LocalMemoryTests.test_invalid_stale_and_unowned_changes_leave_revision_unchanged",
+        "test_cli_memory.LocalMemoryTests.test_add_remove_and_reset_project_definition",
+        "test_cli_memory.LocalMemoryTests.test_package_add_validates_complete_profile_and_owned_file",
+        "test_cli_memory.LocalMemoryTests.test_get_and_managed_dry_run_are_write_free_without_network",
+        "test_cli_memory.LocalMemoryTests.test_agent_switch_preserves_history_without_replaying_tools",
+        "test_cli_memory.LocalMemoryTests.test_unchanged_policy_resumes_exact_id_changed_policy_refreshes",
+        "test_cli_memory.LocalMemoryTests.test_capture_failure_retains_user_request_and_reports_failed_attempt",
+        "test_cli_memory.LocalMemoryTests.test_pagination_scope_and_duplicate_import",
+        "test_cli_memory.LocalMemoryTests.test_managed_cli_single_turn_records_history_and_launch_without_http",
+        "test_cli_memory.LocalMemoryTests.test_native_policy_refresh_keeps_auth_home_and_imports_existing_history",
+        "test_cli_memory.LocalMemoryTests.test_native_message_normalization_excludes_stale_rules_and_nested_handoffs",
+        "test_cli_memory.LocalMemoryTests.test_shared_editor_restore_is_csrf_guarded_and_reaches_projects",
+        "test_cli_memory.LocalMemoryTests.test_tool_event_volume_does_not_hide_the_user_goal_from_handoff",
+        "test_cli_memory.LocalMemoryTests.test_typed_registration_validation_rejects_missing_source_and_literal_credentials",
+        "test_cli_memory.LocalMemoryTests.test_explicit_claude_tool_grants_refresh_policy_without_global_changes",
+        "test_cli_memory.LocalMemoryTests.test_chat_tool_grants_are_explicit_audited_and_clearable"
+      ],
+      "replacement_suite": "tests/application"
+    },
+    {
+      "id": "coordination",
+      "scope": "project/task/orbe",
+      "effects": "read/write/process",
+      "existing_tests": [
+        "test_coordination.CoordinationTests.test_0001_migration_preserves_active_native_session_references",
+        "test_coordination.CoordinationTests.test_stdio_protocol_rejects_bad_frames_and_enforces_tool_schema",
+        "test_coordination.CoordinationTests.test_key_identity_is_provider_independent_and_legacy_slots_are_unchanged",
+        "test_coordination.CoordinationTests.test_task_workspace_binding_is_stable_and_writer_lock_prevents_shared_edits",
+        "test_coordination.CoordinationTests.test_memory_is_versioned_scoped_and_project_acceptance_is_explicit",
+        "test_coordination.CoordinationTests.test_candidates_are_immutable_and_reject_unsafe_or_conflicting_submissions",
+        "test_coordination.CoordinationTests.test_workflow_requires_review_before_qa_and_routes_results_to_parent",
+        "test_coordination.CoordinationTests.test_two_developers_get_distinct_children_and_retries_reuse_requests",
+        "test_coordination.CoordinationTests.test_fix_revision_invalidates_old_approvals_and_respects_round_limit",
+        "test_coordination.CoordinationTests.test_child_knowledge_snapshot_survives_later_project_knowledge_updates",
+        "test_coordination.CoordinationTests.test_native_runner_round_trip_uses_real_stdio_bridge_without_a_model",
+        "test_coordination.CoordinationTests.test_failed_exit_or_modified_inputs_never_promote_staged_approval",
+        "test_coordination.CoordinationTests.test_native_timeout_and_cancellation_block_the_workflow",
+        "test_coordination.CoordinationTests.test_already_cancelled_delegation_does_not_start_a_native_process",
+        "test_coordination.CoordinationTests.test_recovery_refuses_to_duplicate_a_live_or_uncertain_worker",
+        "test_coordination.CoordinationTests.test_runtime_overlays_are_scoped_and_generated_builds_remain_unchanged",
+        "test_coordination.CoordinationTests.test_keyed_dry_run_is_write_free_and_task_ui_is_project_scoped"
+      ],
+      "replacement_suite": "tests/domain"
+    },
+    {
+      "id": "catalog-projects-editor",
+      "scope": "installation/project",
+      "effects": "read/write",
+      "existing_tests": [
+        "test_product.ProductTests.test_finder_metadata_is_not_a_definition",
+        "test_product.ProductTests.test_library_creation_is_validated_published_and_project_pins_are_unchanged",
+        "test_product.ProductTests.test_new_registration_recovers_after_publication_before_source_write",
+        "test_product.ProductTests.test_project_dependencies_preserve_release_and_roll_back_failed_preparation",
+        "test_product.ProductTests.test_dependency_assignment_is_portable_and_survives_catalog_adoption",
+        "test_product.ProductTests.test_interrupted_dependency_assignment_restores_source_without_overwriting_external_edits",
+        "test_product.ProductTests.test_shared_library_forms_and_cli_project_enabling",
+        "test_product.ProductTests.test_editor_rejects_project_management_and_retains_shared_navigation",
+        "test_product.ProductTests.test_library_update_preserves_project_requirements_and_overrides_but_updates_definitions",
+        "test_product.ProductTests.test_new_shared_items_are_available_without_per_project_adoption",
+        "test_product.ProductTests.test_cli_mcp_login_is_explicit_and_never_starts_a_model",
+        "test_product.ProductTests.test_capabilities_reuse_shared_selection_across_agents",
+        "test_product.ProductTests.test_remote_skill_checks_bypass_cache_and_preserve_pins",
+        "test_product.ProductTests.test_cli_capability_checks_are_explicit_and_selection_scoped",
+        "test_product.ProductTests.test_authentication_uses_matching_native_runtime_only",
+        "test_product.ProductTests.test_shared_resource_editor_escapes_skill_content_and_corrupt_reports_remain_unknown",
+        "test_product.ProductTests.test_migrations_are_repeatable_match_models_and_preserve_data",
+        "test_product.ProductTests.test_global_changes_follow_automatically_and_reuse_unaffected_builds",
+        "test_product.ProductTests.test_base_change_reaches_every_dependent_profile",
+        "test_product.ProductTests.test_failed_build_does_not_undo_shared_publication_and_stale_writes_fail",
+        "test_product.ProductTests.test_legacy_section_overrides_survive_automatic_shared_updates",
+        "test_product.ProductTests.test_concurrent_definition_edits_allow_one_publication_and_report_conflict",
+        "test_product.ProductTests.test_source_edit_validation_conflict_and_publication_recovery",
+        "test_product.ProductTests.test_context_is_pinned_until_explicit_refresh",
+        "test_product.ProductTests.test_launch_history_and_fresh_session_preserve_idempotency",
+        "test_product.ProductTests.test_import_is_repeatable_and_does_not_invent_historical_configuration",
+        "test_product.ProductTests.test_product_dry_run_has_no_filesystem_writes",
+        "test_product.ProductTests.test_adoption_during_launch_keeps_running_home_and_next_launch_reuses_session",
+        "test_product.ProductTests.test_skill_cache_can_be_repaired_from_pinned_resources",
+        "test_product.ProductTests.test_cli_project_lifecycle_and_editor_history",
+        "test_product.ProductTests.test_cli_registration_uses_selected_user_config_for_aliases",
+        "test_product.ProductTests.test_cli_invalid_profile_and_missing_context_preserve_project",
+        "test_product.ProductTests.test_definition_navigation_separates_categories_and_preserves_editor_context",
+        "test_product.ProductTests.test_local_ui_forms_security_and_html_escaping"
+      ],
+      "replacement_suite": "tests/interfaces"
+    },
+    {
+      "id": "installation",
+      "scope": "installation",
+      "effects": "filesystem/process",
+      "existing_tests": [
+        "test_installation.InstallationTests.test_server_probe_accepts_only_matching_bounded_ready_responses",
+        "test_installation.InstallationTests.test_native_launch_uses_local_storage_without_a_running_server",
+        "test_installation.InstallationTests.test_dry_run_never_checks_server_or_creates_storage",
+        "test_installation.InstallationTests.test_installed_orbes_auth_and_capability_lookup_use_external_home",
+        "test_installation.InstallationTests.test_health_endpoint_and_manual_server_command",
+        "test_installation.InstallationTests.test_shell_blocks_are_idempotent_preserve_symlinks_and_existing_content",
+        "test_installation.InstallationTests.test_setup_installs_reinstalls_and_preserves_data_in_isolated_home",
+        "test_installation.InstallationTests.test_setup_rejects_missing_python_and_unmanaged_destination",
+        "test_installation.InstallationTests.test_update_requires_existing_installation_before_creating_files",
+        "test_installation.InstallationTests.test_bundled_updates_preserve_customizations_and_refresh_unchanged_files",
+        "test_installation.InstallationTests.test_setup_reports_missing_venv_before_creating_an_installation",
+        "test_installation.InstallationTests.test_reinstall_refuses_reachable_unhealthy_server_before_changing_files"
+      ],
+      "replacement_suite": "tests/infrastructure"
+    },
+    {
+      "id": "removal",
+      "scope": "installation/project",
+      "effects": "read/write",
+      "existing_tests": [
+        "test_removal.RemovalTests.test_project_removal_preserves_independent_additions_and_shared_history",
+        "test_removal.RemovalTests.test_inherited_project_requirement_remains_and_is_explained",
+        "test_removal.RemovalTests.test_transitive_skill_and_mcp_usage_blocks_shared_removal",
+        "test_removal.RemovalTests.test_pinned_profile_and_explicit_launch_choices_are_active_usage",
+        "test_removal.RemovalTests.test_unused_shared_removal_retains_old_builds_catalogs_and_local_sources",
+        "test_removal.RemovalTests.test_skill_alias_shadowing_does_not_block_unrelated_registry_removal",
+        "test_removal.RemovalTests.test_project_failed_preparation_and_stale_revision_do_not_remove_source",
+        "test_removal.RemovalTests.test_interrupted_shared_removal_recovers_without_overwriting_external_changes",
+        "test_removal.RemovalTests.test_corrupt_project_provenance_blocks_shared_removal",
+        "test_removal.RemovalTests.test_unknown_legacy_selection_blocks_until_a_known_launch_is_recorded",
+        "test_removal.RemovalTests.test_stale_release_and_external_source_edit_prevent_shared_removal",
+        "test_removal.RemovalTests.test_removal_ui_csrf_and_usage_recheck"
+      ],
+      "replacement_suite": "tests/infrastructure"
+    },
+    {
+      "id": "authentication",
+      "scope": "native runtime",
+      "effects": "process",
+      "existing_tests": [
+        "test_authentication.LoginTests.test_fixed_commands_preserve_each_native_runtime_environment",
+        "test_authentication.LoginTests.test_completion_and_failure_expose_no_process_output",
+        "test_authentication.LoginTests.test_duplicate_jobs_cancellation_timeout_and_shutdown",
+        "test_authentication.LoginTests.test_missing_cli_has_a_safe_error_and_no_job"
+      ],
+      "replacement_suite": "tests/plugins"
+    },
+    {
+      "id": "capabilities",
+      "scope": "selection/native runtime",
+      "effects": "read/network/process",
+      "existing_tests": [
+        "test_capabilities.AuthenticationTests.test_reported_states_are_not_inferred_from_credentials",
+        "test_capabilities.AuthenticationTests.test_wrong_endpoint_and_malformed_output_remain_unknown",
+        "test_capabilities.AuthenticationTests.test_missing_runtime_unsupported_agents_and_failures"
+      ],
+      "replacement_suite": "tests/plugins"
+    },
+    {
+      "id": "herdr",
+      "scope": "terminal owner",
+      "effects": "process",
+      "existing_tests": [
+        "test_herdr.HerdrTests.test_label_order_and_absent_fields",
+        "test_herdr.HerdrTests.test_display_is_scoped_to_agent_and_cleared_on_failure",
+        "test_herdr.HerdrTests.test_binary_discovery_uses_owner_binary_without_path",
+        "test_herdr.HerdrTests.test_outside_herdr_and_headless_do_not_report",
+        "test_herdr.HerdrTests.test_failed_or_missing_integration_does_not_block_launch"
+      ],
+      "replacement_suite": "tests/contracts"
+    },
+    {
+      "id": "legacy-rename",
+      "scope": "installation/runtime",
+      "effects": "read/write",
+      "existing_tests": [
+        "test_rename.RenameTests.test_checkout_command_has_new_help_and_read_only_dry_runs",
+        "test_rename.RenameTests.test_old_runtime_resume_keeps_ids_homes_counts_and_original_records",
+        "test_rename.RenameTests.test_old_configuration_and_snapshots_remain_readable",
+        "test_rename.RenameTests.test_populated_old_database_upgrades_without_losing_relationships",
+        "test_rename.RenameTests.test_old_orbes_import_once_and_ambiguous_databases_are_rejected"
+      ],
+      "replacement_suite": "tests/infrastructure"
+    },
+    {
+      "id": "snapshots",
+      "scope": "blob",
+      "effects": "read/write",
+      "existing_tests": [
+        "test_snapshots.SnapshotTests.test_round_trip_reuse_corruption_and_executable_bits",
+        "test_snapshots.SnapshotTests.test_rejects_traversal_symlinks_and_runtime_sources",
+        "test_snapshots.SnapshotTests.test_project_context_and_profile_override_order"
+      ],
+      "replacement_suite": "tests/infrastructure"
+    }
+  ],
+  "cli_contracts": [
+    {
+      "command": "run",
+      "feature": "resolver",
+      "scope": "selection",
+      "effects": "read/build",
+      "replacement_suite": "tests/domain",
+      "test_group": "resolver"
+    },
+    {
+      "command": "chat",
+      "feature": "conversations",
+      "scope": "project/conversation",
+      "effects": "read/write/process",
+      "replacement_suite": "tests/application",
+      "test_group": "conversations"
+    },
+    {
+      "command": "conversations",
+      "feature": "conversations",
+      "scope": "project/conversation",
+      "effects": "read/write/process",
+      "replacement_suite": "tests/application",
+      "test_group": "conversations"
+    },
+    {
+      "command": "orbes",
+      "feature": "conversations",
+      "scope": "project/conversation",
+      "effects": "read/write/process",
+      "replacement_suite": "tests/application",
+      "test_group": "conversations"
+    },
+    {
+      "command": "get",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "command": "add",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "command": "remove",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "command": "override",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "command": "reset",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "command": "set",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "command": "history",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "command": "diff",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "command": "rollback",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "command": "resolve",
+      "feature": "resolver",
+      "scope": "selection",
+      "effects": "read/build",
+      "replacement_suite": "tests/domain",
+      "test_group": "resolver"
+    },
+    {
+      "command": "build",
+      "feature": "resolver",
+      "scope": "selection",
+      "effects": "read/build",
+      "replacement_suite": "tests/domain",
+      "test_group": "resolver"
+    },
+    {
+      "command": "doctor",
+      "feature": "resolver",
+      "scope": "selection",
+      "effects": "read/build",
+      "replacement_suite": "tests/domain",
+      "test_group": "resolver"
+    },
+    {
+      "command": "list",
+      "feature": "resolver",
+      "scope": "selection",
+      "effects": "read/build",
+      "replacement_suite": "tests/domain",
+      "test_group": "resolver"
+    },
+    {
+      "command": "skills",
+      "feature": "resolver",
+      "scope": "selection",
+      "effects": "read/build",
+      "replacement_suite": "tests/domain",
+      "test_group": "resolver"
+    },
+    {
+      "command": "status",
+      "feature": "installation",
+      "scope": "installation",
+      "effects": "filesystem/process",
+      "replacement_suite": "tests/infrastructure",
+      "test_group": "installation"
+    },
+    {
+      "command": "auth",
+      "feature": "installation",
+      "scope": "installation",
+      "effects": "filesystem/process",
+      "replacement_suite": "tests/infrastructure",
+      "test_group": "installation"
+    },
+    {
+      "command": "migrate",
+      "feature": "installation",
+      "scope": "installation",
+      "effects": "filesystem/process",
+      "replacement_suite": "tests/infrastructure",
+      "test_group": "installation"
+    },
+    {
+      "command": "web",
+      "feature": "installation",
+      "scope": "installation",
+      "effects": "filesystem/process",
+      "replacement_suite": "tests/infrastructure",
+      "test_group": "installation"
+    },
+    {
+      "command": "server",
+      "feature": "installation",
+      "scope": "installation",
+      "effects": "filesystem/process",
+      "replacement_suite": "tests/infrastructure",
+      "test_group": "installation"
+    },
+    {
+      "command": "projects",
+      "feature": "catalog-projects-editor",
+      "scope": "installation/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/interfaces",
+      "test_group": "catalog-projects-editor"
+    },
+    {
+      "command": "definitions",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "command": "tasks",
+      "feature": "coordination",
+      "scope": "project/task/orbe",
+      "effects": "read/write/process",
+      "replacement_suite": "tests/domain",
+      "test_group": "coordination"
+    },
+    {
+      "command": "memory",
+      "feature": "coordination",
+      "scope": "project/task/orbe",
+      "effects": "read/write/process",
+      "replacement_suite": "tests/domain",
+      "test_group": "coordination"
+    },
+    {
+      "command": "mcp-serve",
+      "feature": "coordination",
+      "scope": "project/task/orbe",
+      "effects": "read/write/process",
+      "replacement_suite": "tests/domain",
+      "test_group": "coordination"
+    },
+    {
+      "command": "memory-serve",
+      "feature": "conversations",
+      "scope": "verified memory launch binding",
+      "effects": "read/write",
+      "replacement_suite": "tests/memory",
+      "test_group": "conversations"
+    }
+  ],
+  "operation_contracts": [
+    {
+      "operation": "chat",
+      "feature": "conversations",
+      "scope": "project/conversation",
+      "effects": "read/write/process",
+      "replacement_suite": "tests/application",
+      "test_group": "conversations"
+    },
+    {
+      "operation": "configuration.build",
+      "feature": "resolver",
+      "scope": "selection",
+      "effects": "read/build",
+      "replacement_suite": "tests/domain",
+      "test_group": "resolver"
+    },
+    {
+      "operation": "configuration.resolve",
+      "feature": "resolver",
+      "scope": "selection",
+      "effects": "read/build",
+      "replacement_suite": "tests/domain",
+      "test_group": "resolver"
+    },
+    {
+      "operation": "conversation",
+      "feature": "conversations",
+      "scope": "project/conversation",
+      "effects": "read/write/process",
+      "replacement_suite": "tests/application",
+      "test_group": "conversations"
+    },
+    {
+      "operation": "coordination",
+      "feature": "coordination",
+      "scope": "project/task/orbe",
+      "effects": "read/write/process",
+      "replacement_suite": "tests/domain",
+      "test_group": "coordination"
+    },
+    {
+      "operation": "definition",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "operation": "launch",
+      "feature": "resolver",
+      "scope": "selection",
+      "effects": "read/build",
+      "replacement_suite": "tests/domain",
+      "test_group": "resolver"
+    },
+    {
+      "operation": "library.list",
+      "feature": "resolver",
+      "scope": "selection",
+      "effects": "read/build",
+      "replacement_suite": "tests/domain",
+      "test_group": "resolver"
+    },
+    {
+      "operation": "orbes",
+      "feature": "conversations",
+      "scope": "project/conversation",
+      "effects": "read/write/process",
+      "replacement_suite": "tests/application",
+      "test_group": "conversations"
+    },
+    {
+      "operation": "product",
+      "feature": "catalog-projects-editor",
+      "scope": "installation/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/interfaces",
+      "test_group": "catalog-projects-editor"
+    },
+    {
+      "operation": "shared.edit",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "operation": "shared.mcp.add",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "operation": "shared.publish",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "operation": "shared.remove",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "operation": "shared.rollback",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "operation": "shared.skill.add",
+      "feature": "definitions",
+      "scope": "shared catalog/project",
+      "effects": "read/write",
+      "replacement_suite": "tests/contracts",
+      "test_group": "definitions"
+    },
+    {
+      "operation": "skills.install",
+      "feature": "resolver",
+      "scope": "selection",
+      "effects": "read/build",
+      "replacement_suite": "tests/domain",
+      "test_group": "resolver"
+    },
+    {
+      "operation": "task.call",
+      "feature": "coordination",
+      "scope": "project/task/orbe",
+      "effects": "read/write/process",
+      "replacement_suite": "tests/domain",
+      "test_group": "coordination"
+    },
+    {
+      "operation": "task.delegate",
+      "feature": "coordination",
+      "scope": "project/task/orbe",
+      "effects": "read/write/process",
+      "replacement_suite": "tests/domain",
+      "test_group": "coordination"
+    }
+  ],
+  "memory_features": {
+    "unit_test_suite": "tests/memory",
+    "operations": [
+      "put",
+      "query",
+      "list",
+      "show",
+      "history",
+      "visibility",
+      "revise",
+      "retract",
+      "configure",
+      "status",
+      "reindex",
+      "retry-capture",
+      "import-legacy"
+    ],
+    "scope": "owned private units plus global active units",
+    "effects": "canonical transactions, rebuildable FTS/vector projections, explicitly configured local inference"
+  }
+}

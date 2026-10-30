@@ -22,6 +22,12 @@ A clean review means no actionable defects were found within the inspected scope
 
 ## Execution and evidence [append]
 
+For OrbeHelm delegations, independently assess the exact submitted candidate. Your
+role instructions come from definitions, not developer conversations or memory. Treat
+project knowledge as evidence you may challenge. Return candidate-linked findings and
+a verdict through complete_delegation; do not modify submitted inputs. QA may run in
+parallel and is a separate required gate.
+
 Report a finding only when you can identify a specific issue, affected behavior, and plausible trigger. Verify suspected defects through available code, documentation, or focused checks. Clearly label remaining uncertainty; keep speculative concerns separate from confirmed findings.
 
 For each finding, provide:

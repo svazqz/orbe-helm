@@ -22,6 +22,8 @@ from alembic.config import Config
 from fastapi.testclient import TestClient
 
 from orbehelm.core import OrbeHelmError, digest, build_directory
+from orbehelm.cli import main
+from orbehelm.application import execute
 from orbehelm.adapters import launch
 from orbehelm.composition import MARKER, SECTION_TITLES
 from orbehelm.product.database import Store, migrate, engine_for
@@ -89,7 +91,7 @@ class ProductTests(unittest.TestCase):
         release = add_skill(self.store, {'name': 'extra-testing', 'source': 'examples/skills/testing',
                                         'expected_release': self.release.id})
         self.assertTrue((self.root / 'registry/skills/extra-testing.json').is_file())
-        self.assertEqual(configuration_for(self.store, self.project).release_id, self.release.id)
+        self.assertEqual(configuration_for(self.store, self.project).release_id, release.id)
         with self.assertRaises(Conflict):
             add_skill(self.store, {'name': 'extra-testing', 'source': 'examples/skills/testing',
                                    'expected_release': release.id})
@@ -141,7 +143,8 @@ class ProductTests(unittest.TestCase):
             self.assertEqual(len(db.scalars(select(ConfigurationBuild)).all()), 0)
             self.assertEqual(len(db.scalars(select(SelectionLock)).all()), 1)
         release = self.edit('definitions/profiles/reviewer.md')
-        adopted = adopt_configuration(self.store, self.project, release.id, added.id)
+        adopted = configuration_for(self.store, self.project)
+        self.result(persist=True)
         data = inventory(self.store, self.project, adopted)
         self.assertEqual(data['skills'][0]['name'], 'testing')
         self.assertIsNone(data['runtime'])
@@ -165,17 +168,12 @@ class ProductTests(unittest.TestCase):
         self.assertEqual(manifest.read_text(), external)
         self.assertEqual(configuration_for(self.store, self.project).id, config.id)
 
-    def test_library_forms_project_navigation_and_enabling(self):
+    def test_shared_library_forms_and_cli_project_enabling(self):
         app = create_app(self.root)
         self.addCleanup(app.state.store.close)
-        url = '/projects/' + self.project.id
         with TestClient(app, base_url='http://localhost:8765') as client:
-            overview = client.get(url)
-            self.assertIn('aria-label="Project sections"', overview.text)
-            self.assertNotIn('id="override"', overview.text)
-            for tab in ['overview', 'skills', 'mcp', 'instructions', 'updates', 'history', 'orbes']:
-                self.assertEqual(client.get(url, params={'tab': tab}).status_code, 200)
-            self.assertEqual(client.get(url, params={'tab': 'unknown'}).status_code, 404)
+            self.assertEqual(client.get('/projects/' + self.project.id).status_code, 404)
+            self.assertEqual(client.get('/skills').status_code, 200)
             token = client.cookies['orbehelm_csrf']
             self.assertEqual(client.post('/skills/new', data={'name': 'missing-csrf'}).status_code, 403)
             invalid = client.post('/skills/new', data={'csrf': token, 'name': 'new-item',
@@ -183,73 +181,25 @@ class ProductTests(unittest.TestCase):
             self.assertEqual(invalid.status_code, 400)
             self.assertIn('value="new-item"', invalid.text)
             response = client.post('/skills/new', data={'csrf': token, 'name': 'new-item',
-                'source': 'examples/skills/testing', 'expected_release': self.release.id, 'project': self.project.id})
+                'source': 'examples/skills/testing', 'expected_release': self.release.id})
             self.assertEqual(response.status_code, 200)
-            self.assertIn('Added to the shared library', response.text)
-            self.assertEqual(configuration_for(self.store, self.project).release_id, self.release.id)
-            self.assertEqual(client.get('/skills').status_code, 200)
-            self.assertEqual(client.get('/mcp/new').status_code, 200)
-            updated = client.post(url + '/adopt', data={'csrf': token,
-                'expected': self.project.active_revision, 'release': latest(self.store).id})
-            self.assertEqual(updated.status_code, 200)
-            config = configuration_for(self.store, self.project)
-            enabled = client.post(url + '/dependencies', data={'csrf': token,
-                'expected': config.id, 'kind': 'skills', 'name': 'new-item'})
-            self.assertEqual(enabled.status_code, 200)
-            self.assertIn('Enabled for this project', enabled.text)
-            self.assertIn('Testing Workflow', enabled.text)
+            self.assertEqual(configuration_for(self.store, self.project).release_id, latest(self.store).id)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main(['projects', 'add-skill', 'new-item', '--root', str(self.root), '--project', str(self.work)]), 0)
+        self.assertIn('new-item', [item['name'] for item in self.result()['skills']])
 
-    def test_project_registration_keeps_project_navigation_and_declares_shared_scope(self):
-        from html.parser import HTMLParser
-
-        class ActiveMainNavigation(HTMLParser):
-            def __init__(self, html):
-                super().__init__()
-                self.in_main = False
-                self.links = []
-                self.feed(html)
-
-            def handle_starttag(self, tag, attrs):
-                attrs = dict(attrs)
-                if tag == 'nav':
-                    self.in_main = attrs.get('aria-label') == 'Main navigation'
-                if self.in_main and tag == 'a' and attrs.get('aria-current') == 'page':
-                    self.links.append(attrs.get('href'))
-
-            def handle_endtag(self, tag):
-                if tag == 'nav':
-                    self.in_main = False
-
+    def test_editor_rejects_project_management_and_retains_shared_navigation(self):
         app = create_app(self.root)
         self.addCleanup(app.state.store.close)
-        url = '/projects/' + self.project.id
         with TestClient(app, base_url='http://localhost:8765') as client:
-            for kind in ['skills', 'mcp']:
-                response = client.get(f'{url}/{kind}/new')
-                self.assertEqual(response.status_code, 200)
-                self.assertEqual(ActiveMainNavigation(response.text).links, ['/'])
-                self.assertIn('This creates a shared-library entry', response.text)
-                self.assertIn('It does not enable the item', response.text)
-                self.assertIn(f'{url}?tab={kind}', response.text)
-                legacy = client.get(f'/{kind}/new', params={'project': self.project.id})
-                self.assertEqual(legacy.url.path, f'{url}/{kind}/new')
-                self.assertEqual(ActiveMainNavigation(legacy.text).links, ['/'])
+            for kind in ('skills', 'mcp'):
+                self.assertEqual(client.get(f'/projects/{self.project.id}/{kind}/new').status_code, 404)
+                self.assertEqual(client.get(f'/{kind}/new', params={'project': self.project.id}).status_code, 400)
                 shared = client.get(f'/{kind}/new')
-                self.assertEqual(ActiveMainNavigation(shared.text).links, [f'/{kind}'])
+                self.assertEqual(shared.status_code, 200)
+                self.assertNotIn('href="/projects', shared.text)
             token = client.cookies['orbehelm_csrf']
-            values = {'csrf': token, 'expected_release': self.release.id,
-                      'name': 'bad-local-source', 'source': '../outside'}
-            invalid = client.post(f'{url}/skills/new', data=values)
-            self.assertEqual(invalid.status_code, 400)
-            self.assertEqual(ActiveMainNavigation(invalid.text).links, ['/'])
-            values.update(name='project-created', source='examples/skills/testing')
-            saved = client.post(f'{url}/skills/new', data=values)
-            self.assertEqual(saved.status_code, 200)
-            self.assertEqual(saved.url.path, url)
-            self.assertIn('Added to the shared library', saved.text)
-            self.assertEqual(configuration_for(self.store, self.project).release_id, self.release.id)
-            values['project'] = 'different-project'
-            self.assertEqual(client.post(f'{url}/skills/new', data=values).status_code, 400)
+            self.assertEqual(client.post('/projects/register', data={'csrf': token, 'path': str(self.work)}).status_code, 404)
 
     def test_library_update_preserves_project_requirements_and_overrides_but_updates_definitions(self):
         config = configuration_for(self.store, self.project)
@@ -263,7 +213,7 @@ class ProductTests(unittest.TestCase):
         data['url'] = 'https://example.test/new-docs'
         definition.write_text(json.dumps(data))
         release = self.edit('examples/skills/testing/SKILL.md', '\nNew shared skill instructions.\n')
-        adopted = adopt_configuration(self.store, self.project, release.id, config.id)
+        adopted = configuration_for(self.store, self.project)
         after = self.result()
         self.assertEqual(adopted.context_snapshot, config.context_snapshot)
         self.assertEqual(adopted.overrides, config.overrides)
@@ -272,60 +222,31 @@ class ProductTests(unittest.TestCase):
         self.assertNotEqual(after['skills'][0]['sha256'], before['skills'][0]['sha256'])
         self.assertEqual(after['mcp']['docs']['url'], 'https://example.test/new-docs')
 
-    def test_project_explains_new_items_missing_from_its_pinned_library(self):
+    def test_new_shared_items_are_available_without_per_project_adoption(self):
         release = add_skill(self.store, {'name': 'new-skill', 'source': 'examples/skills/testing',
                                         'expected_release': self.release.id})
         release = add_mcp(self.store, {'name': 'new-server', 'transport': 'http',
             'url': 'https://example.test/mcp', 'expected_release': release.id})
-        app = create_app(self.root)
-        self.addCleanup(app.state.store.close)
-        url = '/projects/' + self.project.id
-        with TestClient(app, base_url='http://localhost:8765') as client:
-            for tab, name in [('skills', 'new-skill'), ('mcp', 'new-server')]:
-                response = client.get(url, params={'tab': tab})
-                self.assertEqual(response.status_code, 200)
-                self.assertIn(name, response.text)
-                self.assertIn('New library items are available', response.text)
-                self.assertIn('Review library updates', response.text)
-                self.assertNotIn(f'<option>{name}</option>', response.text)
-            self.assertEqual(configuration_for(self.store, self.project).release_id, self.release.id)
-            adopt_configuration(self.store, self.project, release.id, self.project.active_revision)
-            for tab, name in [('skills', 'new-skill'), ('mcp', 'new-server')]:
-                response = client.get(url, params={'tab': tab})
-                self.assertIn(f'<option>{name}</option>', response.text)
-                self.assertNotIn('New library items are available', response.text)
+        config = configuration_for(self.store, self.project)
+        self.assertEqual(config.release_id, release.id)
+        config = add_project_dependency(self.store, self.project, 'skills', 'new-skill', config.id)
+        add_project_dependency(self.store, self.project, 'mcp', 'new-server', config.id)
+        result = self.result()
+        self.assertIn('new-skill', [item['name'] for item in result['skills']])
+        self.assertIn('new-server', result['mcp'])
 
-    def test_login_routes_scope_the_action_and_never_start_a_model(self):
+    def test_cli_mcp_login_is_explicit_and_never_starts_a_model(self):
         config = configuration_for(self.store, self.project)
         add_project_dependency(self.store, self.project, 'mcp', 'docs', config.id)
         result = self.result(persist=True)
         output, _ = build_project(self.store, result, 'codex')
-        with patch('orbehelm.adapters.doctor', return_value={'ok': True}), \
-                patch('orbehelm.adapters.subprocess.call', return_value=0):
+        with patch('orbehelm.adapters.doctor', return_value={'ok': True}), patch('orbehelm.adapters.subprocess.call', return_value=0):
             launch(self.root, output, result, 'codex')
-        config = configuration_for(self.store, self.project)
-        app = create_app(self.root)
-        self.addCleanup(app.state.store.close)
-        url = '/projects/' + self.project.id
-        with TestClient(app, base_url='http://localhost:8765') as client:
-            with patch.object(app.state.logins, 'start') as start:
-                self.assertEqual(client.get(url, params={'tab': 'mcp'}).status_code, 200)
-                start.assert_not_called()
-            token = client.cookies['orbehelm_csrf']
-            form = {'expected': config.id, 'selection': selection_key(), 'agent': 'codex', 'server': 'docs'}
-            self.assertEqual(client.post(url + '/mcp-login', data=form).status_code, 403)
-            form['csrf'] = token
-            with patch('orbehelm.product.web.unavailable', return_value=None), \
-                    patch('orbehelm.product.authentication.login_command', return_value=(
-                        [sys.executable, '-c', 'import time; time.sleep(20)'], dict(os.environ))):
-                response = client.post(url + '/mcp-login', data=form)
-            self.assertEqual(response.status_code, 200)
-            self.assertIn('Complete sign-in in your browser', response.text)
-            job = next(iter(app.state.logins.jobs.values()))
-            self.assertEqual(job.agent, 'codex')
-            form['server'] = 'not-enabled'
-            self.assertEqual(client.post(url + '/mcp-login', data=form).status_code, 400)
-            self.assertEqual(client.post(url + f'/mcp-login/{job.id}/cancel', data={'csrf': token}).status_code, 200)
+        with patch('orbehelm.product.authentication.unavailable', return_value=None), patch('orbehelm.product.authentication.login_command', return_value=(['fake', 'mcp', 'login'], {})), patch('subprocess.call', return_value=0) as child, contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main(['projects', 'login-mcp', 'docs', '--root', str(self.root), '--project', str(self.work)]), 0)
+        self.assertEqual(child.call_args.args[0], ['fake', 'mcp', 'login'])
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(main(['projects', 'login-mcp', 'not-enabled', '--root', str(self.root), '--project', str(self.work)]), 2)
 
     def test_capabilities_reuse_shared_selection_across_agents(self):
         result = self.result(skills=['testing'], persist=True)
@@ -346,7 +267,7 @@ class ProductTests(unittest.TestCase):
         self.edit('examples/skills/testing/SKILL.md', '\nNew published content.\n')
         report = check_capabilities(self.store, self.project, config, data['selection'], 'codex')
         self.assertEqual(report['skills']['testing']['status'], 'Update available')
-        self.assertEqual(self.result(skills=['testing'])['fingerprint'], before)
+        self.assertNotEqual(self.result(skills=['testing'])['fingerprint'], before)
         self.assertEqual(inventory(self.store, self.project, config)['report'], report)
         other_agent = inventory(self.store, self.project, config, agent='claude')['report']
         self.assertEqual(other_agent['skills'], report['skills'])
@@ -369,39 +290,24 @@ class ProductTests(unittest.TestCase):
         self.assertEqual(report['status'], 'Unknown')
         self.assertNotIn('private', str(report))
 
-    def test_capability_view_checks_are_explicit_and_validate_selection(self):
-        path = self.work / 'orbehelm.project.json'
-        path.write_text(json.dumps({'schema_version': 1, 'skills': ['testing'], 'mcp': ['docs']}))
+    def test_cli_capability_checks_are_explicit_and_selection_scoped(self):
+        (self.work / 'orbehelm.project.json').write_text(json.dumps({'schema_version': 1, 'skills': ['testing'], 'mcp': ['docs']}))
         config = configuration_for(self.store, self.project)
         adopt_configuration(self.store, self.project, config.release_id, config.id, refresh_context=True)
         self.result(persist=True)
-        app = create_app(self.root)
-        self.addCleanup(app.state.store.close)
-        url = '/projects/' + self.project.id
-        with TestClient(app, base_url='http://localhost:8765') as client:
-            with patch('orbehelm.product.capabilities.mcp_authentication') as probe, \
-                    patch('orbehelm.product.capabilities.check_skill') as updates:
-                response = client.get(url, params={'tab': 'skills'})
-                self.assertEqual(response.status_code, 200)
-                self.assertIn('Testing Workflow', response.text)
-                self.assertIn('docs', client.get(url, params={'tab': 'mcp'}).text)
-                probe.assert_not_called()
-                updates.assert_not_called()
-            config = configuration_for(self.store, self.project)
-            form = {'expected': config.id, 'selection': selection_key(), 'agent': 'claude'}
-            self.assertEqual(client.post(url + '/check-capabilities', data=form).status_code, 403)
-            form['csrf'] = client.cookies['orbehelm_csrf']
-            response = client.post(url + '/check-capabilities', data=form)
-            self.assertEqual(response.status_code, 200)
-            self.assertIn('claude does not yet have a supported',
-                          client.get(url, params={'tab': 'mcp', 'agent': 'claude'}).text)
-            self.assertIn('Up to date', response.text)
-            form['selection'] = selection_key(skills=['unknown'])
-            self.assertEqual(client.post(url + '/check-capabilities', data=form).status_code, 400)
-            form['selection'], form['agent'] = selection_key(), 'unknown'
-            self.assertEqual(client.post(url + '/check-capabilities', data=form).status_code, 400)
-            form['agent'], form['expected'] = 'codex', 'stale'
-            self.assertEqual(client.post(url + '/check-capabilities', data=form).status_code, 409)
+        args = ['projects', 'capabilities', '--root', str(self.root), '--project', str(self.work), '--agent=claude']
+        with patch('orbehelm.product.capabilities.mcp_authentication') as probe, patch('orbehelm.product.capabilities.check_skill') as updates, contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(main(args), 0)
+            self.assertIn('Testing Workflow', output.getvalue())
+            probe.assert_not_called()
+            updates.assert_not_called()
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(main(['projects', 'check-capabilities', *args[2:]]), 0)
+            self.assertIn('Up to date', output.getvalue())
+            self.assertIn('claude does not yet have', output.getvalue())
+        config = configuration_for(self.store, self.project)
+        with self.assertRaises(OrbeHelmError):
+            check_capabilities(self.store, self.project, config, selection_key(skills=['unknown']), 'claude')
 
     def test_authentication_uses_matching_native_runtime_only(self):
         (self.work / 'orbehelm.project.json').write_text(json.dumps(
@@ -421,20 +327,19 @@ class ProductTests(unittest.TestCase):
         self.assertEqual(probe.call_args.args[1], data['runtime'])
         self.assertIsNone(inventory(self.store, self.project, config, agent='claude')['runtime'])
 
-    def test_skill_instructions_are_escaped_and_reports_handle_corruption(self):
-        release = self.edit('examples/skills/testing/SKILL.md', '\n<script>unsafe()</script>\n')
-        config = configuration_for(self.store, self.project)
-        adopt_configuration(self.store, self.project, release.id, config.id)
+    def test_shared_resource_editor_escapes_skill_content_and_corrupt_reports_remain_unknown(self):
+        self.edit('examples/skills/testing/SKILL.md', '\n<script>unsafe()</script>\n')
         self.result(skills=['testing'], persist=True)
         config = configuration_for(self.store, self.project)
         data = inventory(self.store, self.project, config)
         directory = self.root / 'state/projects' / self.project.id / 'capabilities'
         directory.mkdir(parents=True)
         (directory / (data['report_key'] + '.json')).write_text('[]')
+        self.assertIsNone(inventory(self.store, self.project, config)['report'])
         app = create_app(self.root)
         self.addCleanup(app.state.store.close)
         with TestClient(app, base_url='http://localhost:8765') as client:
-            response = client.get('/projects/' + self.project.id, params={'tab': 'skills'})
+            response = client.get('/definitions', params={'path': 'examples/skills/testing/SKILL.md'})
             self.assertEqual(response.status_code, 200)
             self.assertIn('&lt;script&gt;unsafe()', response.text)
             self.assertNotIn('<script>unsafe()', response.text)
@@ -456,64 +361,53 @@ class ProductTests(unittest.TestCase):
             engine.dispose()
         self.assertTrue(list((self.root / 'state/backups').glob('*.sqlite3')))
 
-    def test_global_change_is_pinned_and_selective_adoption_reuses_unaffected_build(self):
+    def test_global_changes_follow_automatically_and_reuse_unaffected_builds(self):
         python = self.result(spec='python', persist=True)
         php = self.result(spec='php', persist=True)
         python_path, _ = build_project(self.store, python, 'codex')
         php_path, _ = build_project(self.store, php, 'codex')
-        original = self.project.active_revision
         other_dir = self.root / 'other'
         other_dir.mkdir()
         other = register_project(self.store, other_dir)
         release = self.edit('definitions/specializations/developer/python.md')
-        self.assertEqual(self.result(spec='python')['fingerprint'], python['fingerprint'])
-        preview = preview_adoption(self.store, self.project, release.id)
-        impact = {item['spec']: item['changed'] for item in preview['configurations']}
-        self.assertEqual(impact, {'php': False, 'python': True})
-        adopted = adopt_configuration(self.store, self.project, release.id, original)
         self.assertNotEqual(self.result(spec='python')['fingerprint'], python['fingerprint'])
         self.assertEqual(build_directory(self.root, self.result(spec='php')), php_path)
         self.assertTrue(python_path.is_dir())
-        self.assertEqual(configuration_for(self.store, other).release_id, self.release.id)
-        rollback_configuration(self.store, self.project, original, adopted.id)
-        self.assertEqual(self.result(spec='python')['fingerprint'], python['fingerprint'])
+        self.assertEqual(configuration_for(self.store, other).release_id, release.id)
+        historical = configuration_for(self.store, self.project, python['configuration_id'])
+        from orbehelm.product.projects import resolve_configuration
+        self.assertEqual(resolve_configuration(self.store, self.project, historical, spec='python')['fingerprint'], python['fingerprint'])
 
-    def test_base_change_affects_all_dependent_profiles(self):
-        for profile in ('developer', 'reviewer'):
-            result = self.result(profile=profile, persist=True)
-            build_project(self.store, result, 'codex')
-        release = self.edit('definitions/base/instructions.md')
-        preview = preview_adoption(self.store, self.project, release.id)
-        self.assertTrue(all(item['changed'] for item in preview['configurations']))
-        self.assertEqual(len(preview['configurations']), 2)
+    def test_base_change_reaches_every_dependent_profile(self):
+        before = {name: self.result(profile=name)['fingerprint'] for name in ('developer', 'reviewer')}
+        self.edit('definitions/base/instructions.md')
+        self.assertTrue(all(self.result(profile=name)['fingerprint'] != value for name, value in before.items()))
 
-    def test_failed_build_or_stale_adoption_keeps_previous_configuration(self):
-        result = self.result(spec='python', persist=True)
-        build_project(self.store, result, 'codex')
+    def test_failed_build_does_not_undo_shared_publication_and_stale_writes_fail(self):
+        self.result(spec='python', persist=True)
         release = self.edit('definitions/specializations/developer/python.md')
+        current = configuration_for(self.store, self.project)
         with patch('orbehelm.core.build', side_effect=OrbeHelmError('test failure')):
             with self.assertRaisesRegex(OrbeHelmError, 'test failure'):
-                adopt_configuration(self.store, self.project, release.id, self.project.active_revision)
-        self.assertEqual(get_project(self.store, self.project.id).active_revision, self.project.active_revision)
+                build_project(self.store, self.result(spec='python'), 'codex')
+        self.assertEqual(configuration_for(self.store, self.project).id, current.id)
+        self.assertEqual(current.release_id, release.id)
         with self.assertRaises(Conflict):
             adopt_configuration(self.store, self.project, release.id, 'stale')
 
-    def test_override_is_scoped_and_conflicts_only_for_touched_sections(self):
-        override = save_override(self.store, self.project, 'developer',
-                                 section_override('Communication', 'Local communication rule'), self.project.active_revision)
-        self.assertIn('Local communication rule', self.result()['composed_instructions'])
+    def test_legacy_section_overrides_survive_automatic_shared_updates(self):
+        save_override(self.store, self.project, 'developer', section_override('Communication', 'Local communication rule'), self.project.active_revision)
         path = self.root / 'definitions/profiles/developer.md'
-        content = path.read_text().replace('## Responsibilities', '## Responsibilities', 1)
-        content = content.replace('## Responsibilities [append]', '## Responsibilities [append]\n\nNew responsibility.')
-        path.write_text(content)
-        release = reconcile_catalog(self.store)
-        self.assertEqual(preview_adoption(self.store, self.project, release.id)['conflicts'], [])
-        adopted = adopt_configuration(self.store, self.project, release.id, override.id)
+        path.write_text(path.read_text().replace('## Responsibilities [append]', '## Responsibilities [append]\n\nNew responsibility.'))
+        reconcile_catalog(self.store)
+        text = self.result()['composed_instructions']
+        self.assertIn('Local communication rule', text)
+        self.assertIn('New responsibility.', text)
         path.write_text(path.read_text().replace('## Communication [append]', '## Communication [append]\n\nChanged communication.'))
-        conflicting = reconcile_catalog(self.store)
-        self.assertIn('developer', preview_adoption(self.store, self.project, conflicting.id)['conflicts'])
-        with self.assertRaises(Conflict):
-            adopt_configuration(self.store, self.project, conflicting.id, adopted.id)
+        reconcile_catalog(self.store)
+        text = self.result()['composed_instructions']
+        self.assertIn('Local communication rule', text)
+        self.assertNotIn('Changed communication.', text)
 
     def test_concurrent_definition_edits_allow_one_publication_and_report_conflict(self):
         from concurrent.futures import ThreadPoolExecutor
@@ -619,7 +513,7 @@ class ProductTests(unittest.TestCase):
         def update_during_launch(*args, **kwargs):
             home = Path(kwargs['env']['CODEX_HOME'])
             before = (home / 'config.toml').read_bytes()
-            adopt_configuration(self.store, self.project, release.id, self.project.active_revision)
+            self.assertEqual(configuration_for(self.store, self.project).release_id, release.id)
             self.assertEqual((home / 'config.toml').read_bytes(), before)
             return 0
         with patch('orbehelm.adapters.doctor', return_value={'ok': True}), \
@@ -651,92 +545,42 @@ class ProductTests(unittest.TestCase):
         self.assertEqual(rebuilt, output)
         self.assertNotIn('changed working draft', (rebuilt / 'instructions.md').read_text())
 
-    def test_local_ui_project_lifecycle(self):
+    def test_cli_project_lifecycle_and_editor_history(self):
+        other_path = self.root / 'second-project'
+        other_path.mkdir()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main(['projects', 'register', '--root', str(self.root), '--project', str(other_path)]), 0)
+        other = get_project(self.store, str(other_path))
+        release = self.edit('definitions/specializations/developer/python.md', '\nShared CLI workflow.\n')
+        self.assertEqual(configuration_for(self.store, other).release_id, release.id)
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(main(['projects', 'history', '--root', str(self.root), '--project', str(other_path)]), 0)
+        self.assertIn('Automatically inherited', output.getvalue())
         app = create_app(self.root)
         self.addCleanup(app.state.store.close)
         with TestClient(app, base_url='http://localhost:8765') as client:
-            self.assertEqual(client.get('/').status_code, 200)
-            token = client.cookies['orbehelm_csrf']
-            other_path = self.root / 'other-ui-project'
-            other_path.mkdir()
-            self.assertEqual(client.post('/projects/register', data={'csrf': token, 'path': str(other_path)}).status_code, 200)
-            other = get_project(self.store, str(other_path))
-            result = self.result(spec='python', persist=True)
-            output, _ = build_project(self.store, result, 'codex')
-            with patch('orbehelm.adapters.doctor', return_value={'ok': True}), \
-                    patch('orbehelm.adapters.subprocess.call', return_value=0):
-                launch(self.root, output, result, 'codex')
-            relative = 'definitions/specializations/developer/python.md'
-            path = self.root / relative
-            before = path.read_text()
-            response = client.post('/definitions/save', data={'csrf': token, 'path': relative,
-                'content': before + '\nUI workflow instruction.\n', 'expected_release': self.release.id,
-                'expected_hash': digest(before.encode())})
-            self.assertEqual(response.status_code, 200)
-            release = latest(self.store)
-            detail = client.get('/projects/' + self.project.id, params={'tab': 'updates'})
-            self.assertEqual(detail.status_code, 200)
-            self.assertIn('REBUILD', detail.text)
-            response = client.post('/projects/' + self.project.id + '/adopt',
-                data={'csrf': token, 'expected': self.project.active_revision, 'release': release.id})
-            self.assertEqual(response.status_code, 200)
-            project = get_project(self.store, self.project.id)
-            self.assertNotEqual(project.active_revision, self.project.active_revision)
-            self.assertEqual(configuration_for(self.store, other).release_id, self.release.id)
-            response = client.post('/projects/' + project.id + '/override', data={'csrf': token,
-                'expected': project.active_revision, 'profile': 'developer',
-                'content': section_override('Communication', 'Local UI override')})
-            self.assertEqual(response.status_code, 200)
-            self.assertIn('Local UI override', self.result()['composed_instructions'])
-            project = get_project(self.store, self.project.id)
-            response = client.post('/projects/' + project.id + '/remove-override', data={'csrf': token,
-                'expected': project.active_revision, 'profile': 'developer'})
-            self.assertEqual(response.status_code, 200)
-            self.assertNotIn('Local UI override', self.result()['composed_instructions'])
-            project = get_project(self.store, self.project.id)
-            response = client.post('/projects/' + project.id + '/rollback', data={'csrf': token,
-                'expected': project.active_revision, 'revision': self.project.active_revision})
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(get_project(self.store, project.id).active_revision, self.project.active_revision)
-            self.assertNotIn('UI workflow instruction.', self.result(spec='python')['composed_instructions'])
-            historical = client.get('/definitions', params={'path': relative, 'release': self.release.id})
-            self.assertEqual(historical.status_code, 200)
+            historical = client.get('/definitions', params={'path': 'definitions/specializations/developer/python.md', 'release': self.release.id})
             self.assertIn('readonly', historical.text)
-            orbe = orbe_details(self.store)[0]
-            response = client.get('/orbes/' + orbe['id'])
-            self.assertEqual(response.status_code, 200)
-            self.assertIn('Launch history', response.text)
+            self.assertEqual(client.get('/orbes').status_code, 404)
 
-    def test_ui_uses_selected_user_config_for_project_aliases(self):
+    def test_cli_registration_uses_selected_user_config_for_aliases(self):
         config_path = self.root / 'custom.ini'
         config_path.write_text('[SKILLS]\ncustom = examples/skills/testing\n')
-        app = create_app(self.root, config_path=config_path)
-        self.addCleanup(app.state.store.close)
         other = self.root / 'configured-project'
         other.mkdir()
-        with TestClient(app, base_url='http://localhost:8765') as client:
-            client.get('/')
-            response = client.post('/projects/register', data={'csrf': client.cookies['orbehelm_csrf'], 'path': str(other)})
-            self.assertEqual(response.status_code, 200)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main(['projects', 'register', '--config', str(config_path), '--root', str(self.root), '--project', str(other)]), 0)
         project = get_project(self.store, str(other))
         result = resolve_project(self.store, project, skills=['custom'], persist=True)
         self.assertEqual(result['skills'][0]['name'], 'custom')
 
-    def test_ui_reports_invalid_profile_and_missing_context_without_changing_project(self):
-        app = create_app(self.root)
-        self.addCleanup(app.state.store.close)
-        with TestClient(app, base_url='http://localhost:8765') as client:
-            client.get('/')
-            token = client.cookies['orbehelm_csrf']
-            response = client.post('/projects/' + self.project.id + '/override', data={'csrf': token,
-                'expected': self.project.active_revision, 'profile': 'missing-profile',
-                'content': section_override('Communication', 'Example')})
-            self.assertEqual(response.status_code, 400)
+    def test_cli_invalid_profile_and_missing_context_preserve_project(self):
+        current = configuration_for(self.store, self.project).id
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(main(['get', 'definition.profile.missing-profile', '--root', str(self.root), '--project', str(self.work)]), 2)
             (self.work / 'orbehelm.project.json').write_text(json.dumps({'schema_version': 1, 'instructions': ['missing.md']}))
-            response = client.post('/projects/' + self.project.id + '/refresh-context', data={'csrf': token,
-                'expected': self.project.active_revision})
-            self.assertEqual(response.status_code, 400)
-            self.assertEqual(get_project(self.store, self.project.id).active_revision, self.project.active_revision)
+            self.assertEqual(main(['projects', 'refresh', '--root', str(self.root), '--project', str(self.work)]), 2)
+        self.assertEqual(configuration_for(self.store, self.project).id, current)
 
     def test_definition_navigation_separates_categories_and_preserves_editor_context(self):
         from html.parser import HTMLParser
@@ -808,7 +652,7 @@ class ProductTests(unittest.TestCase):
         with TestClient(app, base_url='http://localhost:8765') as client:
             response = client.get('/')
             self.assertEqual(response.status_code, 200)
-            self.assertIn('Your projects', response.text)
+            self.assertIn('Instructions &amp; profiles', response.text)
             token = client.cookies['orbehelm_csrf']
             self.assertEqual(client.post('/definitions/publish', data={'csrf': ''}).status_code, 403)
             self.assertEqual(client.post('/definitions/publish', data={'csrf': token}, headers={'Origin': 'http://attacker.example'}).status_code, 403)
@@ -823,8 +667,9 @@ class ProductTests(unittest.TestCase):
             self.assertIn('&lt;script&gt;', shown.text)
             self.assertNotIn('<script>alert(1)</script>', shown.text)
             self.assertEqual(client.get('/definitions', params={'path': 'state/auth/codex/auth.json'}).status_code, 404)
-            for url in ('/projects/' + self.project.id, '/orbes', '/releases/' + latest(self.store).id):
-                self.assertEqual(client.get(url).status_code, 200)
+            for url in ('/projects/' + self.project.id, '/orbes'):
+                self.assertEqual(client.get(url).status_code, 404)
+            self.assertEqual(client.get('/releases/' + latest(self.store).id).status_code, 200)
         for host in ('0.0.0.0', 'example.org', '192.168.1.1'):
             with self.assertRaises(OrbeHelmError):
                 validate_bind(host, 8765)

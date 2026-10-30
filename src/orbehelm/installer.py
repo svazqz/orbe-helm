@@ -161,7 +161,7 @@ def copy_application(source, root, previous=None):
             shutil.rmtree(package)
         staged.rename(package)
     bundled = sync_bundled_sources(source, root, previous)
-    for name in ('README.md', 'requirements.lock'):
+    for name in ('README.md', 'CHANGELOG.md', 'requirements.lock', 'requirements-core.lock', 'requirements-memory.lock'):
         shutil.copy2(source / name, root / name)
     if (source / 'docs').is_dir():
         shutil.copytree(source / 'docs', root / 'docs', dirs_exist_ok=True)
@@ -217,6 +217,7 @@ def install(args):
     data = {'schema_version': 1, 'application': 'orbehelm', 'orbes_home': str(orbes),
             'server_url': f'http://127.0.0.1:{port}', 'complete': False,
             'version': __version__, 'bundled_sources': (previous or {}).get('bundled_sources', {})}
+    data['memory_extra'] = args.memory or (previous or {}).get('memory_extra', False)
     write_manifest(root, data)
     data['bundled_sources'] = copy_application(source, root, previous)
     # Save the new baseline before migrations so an interrupted install is retryable.
@@ -233,7 +234,7 @@ def install(args):
                                 'or a complete Python distribution and rerun setup.sh.') from error
     subprocess.run([str(python), '-c', 'import sys; assert sys.version_info >= (3, 11); import pip'], check=True)
     dependencies = [str(python), '-m', 'pip', 'install', '--disable-pip-version-check',
-                    '-r', str(root / 'requirements.lock')]
+                                '-r', str(root / ('requirements-memory.lock' if data['memory_extra'] else 'requirements.lock'))]
     if args.offline:
         dependencies.append('--no-index')
     subprocess.run(dependencies, check=True)
@@ -265,8 +266,8 @@ def install(args):
         print('Open a new terminal, or run: ' + block.splitlines()[1])
     else:
         print('Add to PATH: ' + block.splitlines()[1])
-    print(f'Start the server manually: {shlex.quote(str(launcher))} server start')
-    print(f'Then run: oh --project=/path/to/project --unique-key=TASK-1')
+    print('Run: oh chat --agent=claude --project=/path/to/project --unique-key=TASK-1')
+    print(f'Optional shared-definition editor: {shlex.quote(str(launcher))} web')
     print('Install and authenticate Codex, Claude, or OpenCode separately before real model work.')
 
 
@@ -278,6 +279,7 @@ def main(argv=None):
     parser.add_argument('--port', type=int, help='server port; defaults to the existing port or 8765')
     parser.add_argument('--update', action='store_true', help='require an existing installation and leave shell startup unchanged')
     parser.add_argument('--offline', action='store_true', help='use pip --no-index; dependencies must already be available')
+    parser.add_argument('--memory', action='store_true', help='install the optional local embedding runtime; model download remains explicit')
     parser.add_argument('--no-path', action='store_true', help='leave shell startup files unchanged')
     try:
         install(parser.parse_args(argv))

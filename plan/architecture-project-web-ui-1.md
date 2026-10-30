@@ -4,13 +4,18 @@ version: 2
 date_created: 2026-10-28
 last_updated: 2026-10-28
 owner: OrbeHelm project
-status: In progress
+status: 'Deprecated'
 tags: [architecture, web, projects, versioning, migrations]
 ---
 
 # Introduction
 
-![Status: In progress](https://img.shields.io/badge/status-In_progress-yellow)
+Historical plan. Its required-server and manual shared-release-adoption contracts are
+superseded by [the local CLI and conversation plan](refactor-cli-api-live-definitions-1.md).
+Installation layout and immutable history remain in use.
+
+
+![Status: Deprecated](https://img.shields.io/badge/status-Deprecated-red)
 
 The user approved implementation with FastAPI, SQLAlchemy 2, Alembic, Jinja2, and SQLite after rejecting the original Django proposal. The confirmed scope is local single-user operation, whole-project release adoption, and orbe metadata plus launch history. This revision supersedes the Django-specific design. Implementation and automated product validation are complete: 66 tests pass with installed dependencies, real SQLite/Alembic, and ASGI form workflows. The final live-browser and installed-wheel checks remain environment-limited, so the plan stays In progress until those checks can run. No real project state was migrated.
 

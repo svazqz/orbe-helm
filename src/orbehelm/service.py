@@ -46,11 +46,17 @@ def server_status(root):
 
 
 def require_server(root):
+    """Compatibility alias: native work requires local storage, never a web listener."""
+    return require_storage(root)
+
+
+def require_storage(root):
     data = installation(root)
     if data is not None and data.get('complete') is not True:
         raise OrbeHelmError('Installation is incomplete; rerun setup.sh before starting an orbe')
-    status = server_status(root)
-    if not status['ready']:
-        raise OrbeHelmError(status['detail'] + ' Start it with `oh server start` '
-            f"in another terminal (expected {status['url']}); no orbe was started.")
-    return status
+    from .compatibility import database_file
+    if database_file(root).exists():
+        from .product.database import Store
+        store = Store(root)
+        store.close()
+    return {'ready': True, 'local': True}

@@ -7,7 +7,7 @@ from .core import OrbeHelmError, identifier
 from .compatibility import existing_path
 
 
-OPTIONS = {"root", "agent", "profile", "spec", "project", "skillsets", "skills", "strict"}
+OPTIONS = {"root", "agent", "profile", "spec", "project", "skillsets", "skills", "strict", "memory"}
 
 
 def selections(value, label):
@@ -61,11 +61,12 @@ def load(path=None):
     for name in ("skills", "skillsets"):
         if name in defaults:
             selections(defaults[name], name)
-    if "strict" in defaults:
-        try:
-            defaults["strict"] = configparser.ConfigParser.BOOLEAN_STATES[defaults["strict"].lower()]
-        except KeyError as error:
-            raise OrbeHelmError(f"{location}: strict must be true or false") from error
+    for name in ('strict', 'memory'):
+        if name in defaults:
+            try:
+                defaults[name] = configparser.ConfigParser.BOOLEAN_STATES[defaults[name].lower()]
+            except KeyError as error:
+                raise OrbeHelmError(f"{location}: {name} must be true or false") from error
     aliases = sections.get("SKILLS", {})
     for name, value in aliases.items():
         identifier(name)

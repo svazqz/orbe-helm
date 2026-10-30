@@ -1,0 +1,35 @@
+name: Verify
+on: [push, pull_request]
+
+jobs:
+  kernel:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Independent business rules and application workflows
+        run: python3 -I -S tests/run_kernel.py
+  regression:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install reviewed dependency pins
+        run: python3 -m pip install -r requirements.lock
+      - name: Full regressions, architecture, migrations, and provider contracts
+        run: python3 -m unittest discover -s tests -v
+      - name: Build distribution and verify independent installed imports
+        run: |
+          python3 -m pip wheel --no-deps --wheel-dir state/verification/wheels .
+          python3 tests/check_wheel.py state/verification/wheels/orbehelm-*.whl

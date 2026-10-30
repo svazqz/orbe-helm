@@ -5,12 +5,10 @@
 <body><a class="skip-link" href="#main-content">Skip to content</a>
 <aside><a class="brand" href="/">Orbe<span>Helm</span><i>●</i></a><p class="eyebrow">YOUR WORKSPACE</p>
 <nav aria-label="Main navigation">
-<a href="/" {% if location == '/' or location.startswith('/projects') %}aria-current="page"{% endif %}>Projects</a>
 <span class="nav-label">SHARED LIBRARY</span>
 <a href="/skills" {% if location.startswith('/skills') or navigation_section|default('') == 'skills' %}aria-current="page"{% endif %}>Skills</a>
 <a href="/mcp" {% if location.startswith('/mcp') or navigation_section|default('') == 'mcp' %}aria-current="page"{% endif %}>MCP servers</a>
 <span class="nav-label">WORKSPACE</span>
 <a href="/definitions" {% if (location.startswith('/definitions') and navigation_section|default('') not in ['skills','mcp']) or location.startswith('/releases') %}aria-current="page"{% endif %}>Instructions &amp; profiles</a>
-<a href="/orbes" {% if location.startswith('/orbes') %}aria-current="page"{% endif %}>All orbes</a>
 </nav><div class="local"><span class="dot"></span> Local workspace<br><small>On this computer</small></div></aside>
-<main id="main-content"><header><span class="eyebrow">{% block section %}WORKSPACE{% endblock %}</span><span class="tag">LOCAL</span></header>{% block body %}{% endblock %}<footer>Shared library changes reach a project when you choose to apply them.</footer></main></body></html>
+<main id="main-content"><header><span class="eyebrow">{% block section %}SHARED DEFINITIONS{% endblock %}</span><span class="tag">LOCAL</span></header>{% block body %}{% endblock %}<footer>Shared changes apply to every project's next launch. Project-local overrides remain in effect until reset.</footer></main></body></html>

@@ -1,5 +1,134 @@
 # Alpha Validation
 
+## Persistent workflows — October 30, 2026
+
+With the existing project venv on PATH, `python3 -m unittest discover -s tests -v`
+passed **266 tests** and `python3 -I -S tests/run_kernel.py` passed **24 tests**.
+Evidence is in `state/diagnostics/workflow-verified-tests.log` and
+`workflow-verified-kernel.log`. `git diff --check` passed.
+
+New coverage verifies specialization-independent workstreams with isolated contexts,
+adoption of historical task owners, full-access native/managed/delegated commands,
+Codex trust preservation, schema `0005` → `0006` history-preserving migration,
+project/audience authorization, unclassified-unit exclusion, private derivation,
+native binding provenance/revocation, atomic parallel gate reservation, concurrent
+fake-provider execution, candidate-specific gate aggregation, pinned remote artifact
+references, granular large-report persistence and retry without model re-execution.
+Existing model/migration parity and import-boundary checks also passed.
+
+Codex resume help confirmed its full-access option in an isolated HOME/CODEX_HOME.
+No authenticated model or live reviewer/QA session was started. OpenCode persistent
+native launch is explicitly rejected until recorded native-session resume is supported;
+its build/one-shot configuration remains available. Live privilege/trust/OS policy
+behavior is not established by fake-provider contracts.
+
+The optional `tests/check_memory_cli.py` real-embedding check was attempted but stopped
+at model configuration because FastEmbed is absent from the available environments.
+The cached weights alone do not provide that runtime. No packages were installed or
+downloaded to manufacture a passing result. Keyword retrieval, deterministic vector
+fixtures and actual scoped stdio startup remain covered. Installed application files
+and operational databases were not upgraded by this work.
+
+## Optional memory — October 30, 2026
+
+The full unittest suite passed **245 tests**; the isolated kernel suite passed
+**24 tests**. Wheel contents/imports and shell syntax checks passed. Verification
+logs and the wheel are under `state/verification/optional-memory/`.
+
+New regression coverage verifies memory-off launches without memory engine access
+or conversation capture, exact native resumption after definition changes, stable
+current instruction files, independent provider histories, explicit new sessions,
+configuration defaults, and fresh context when memory is re-enabled. Native launch
+and managed tests use simulated agent processes; no authenticated model session was
+started for this change.
+
+## Owned KUnit memory — October 30, 2026
+
+`python3 -m unittest discover -s tests -v` passed **238 tests** with the checkout
+virtual environment on PATH. `python3 -I -S tests/run_kernel.py` passed **24 tests**
+with third-party packages disabled and kernel external effects blocked. All original
+159 regression IDs remain inventoried. Fresh/upgrade migrations match the ORM metadata
+at schema `0005`; historical migration checksums and packaged migration bytes pass.
+
+Coverage includes owner-only private access, global visibility without ownership/ID
+changes, CAS and source idempotency, exact deduplication, authorized rank fusion,
+source/history redaction, inherited private context on resume, global handoff filtering,
+transitive revocation, stale index workers/configurations, corrupt-index recovery,
+capture retries, actual stdio startup, and canonical visibility/audit operations without
+a working embedding runtime. Provider execution tests use fake native children.
+
+Explicit local integration checks used FastEmbed 0.9.1 and public multilingual model
+artifacts inside `state/verification/knowledge-memory/`. A Spanish paraphrase ranked
+the matching English fact above unrelated text; non-truncating model windows passed.
+The real CLI migrated/registered an isolated project, configured the cached model,
+created/query units, changed visibility both directions, and queried through actual
+stdio MCP. No HTTP listener or authenticated agent session was started.
+
+This Python 3.13/macOS arm64 build disables SQLite extension loading. Local semantic
+checks therefore exercised the declared exact-cosine fallback over real local model
+vectors; they do not certify the native sqlite-vec loading branch on this host.
+Wheel checks passed for independent kernel/memory/plugin imports, optional UI and
+embedding dependencies, file/package consistency, and frozen migration resources.
+Shell syntax and `git diff --check` passed. Evidence logs are under
+`state/verification/knowledge-memory/`.
+
+Live Claude/Codex MCP permission behavior, large-corpus latency, remote CI execution,
+same-user host isolation, cross-computer synchronization, and automatic model-driven
+consolidation are not established by these checks. See [knowledge memory](knowledge-memory.md).
+
+## Independent core foundation — October 29, 2026
+
+The required `python3 -m unittest discover -s tests -v` command passed **199 tests**
+with the checkout virtual environment on PATH. All original 159 test IDs remain
+inventoried. New coverage exercises pure policies, verified-context application
+handlers with memory ports, Codex/Claude translation contracts, ORM projections,
+source-lock/cache integrity after extraction, frozen migrations, and architecture
+boundaries. Alembic reported no model/schema drift; schema remains `0004`.
+
+`python3 -I -S tests/run_kernel.py` passed **21 domain/application tests** without
+site packages, with file/environment/process/network effects blocked during execution.
+An actual wheel was built and passed `tests/check_wheel.py`: isolated kernel/plugin/
+CLI-parser imports, optional UI dependency metadata, no application file/package
+collision, and unchanged migration resource bytes. `git diff --check` passed.
+Evidence is under `state/verification/independent-core-refactor/`.
+
+The refactor is in progress; see [implemented boundaries and remaining work](independent-core-progress.md).
+Production grants, identity/KUnit migrations, complete repository/use-case extraction,
+tool invocation recovery, coverage thresholds, and remote CI results are not established
+by this increment. No authenticated provider session or live Herdr rendering was tested.
+
+## Local CLI and conversation memory — October 29, 2026
+
+The required `python3 -m unittest discover -s tests -v` command passed **159 tests**
+with the checkout virtual environment on PATH (Python 3.13). Evidence:
+`state/test-local-api.log`. Alembic reported no model/schema drift for schema `0004`.
+Shell syntax checks passed for setup.sh/update.sh, and `git diff --check` passed.
+
+New regression coverage includes automatic shared inheritance, project file override/
+reset and scoped mutations, source recovery, shared rollback, structured Claude/Codex
+history capture and handoff, exact-ID resume, policy refresh with stable login homes,
+partial capture failures, history pagination/search, high tool-event volume, native
+transcript normalization, managed launch indexing, explicit process-scoped Claude tool grants and grant-driven
+policy refresh, and Herdr owner-binary discovery.
+Obsolete required-server/project-UI expectations were replaced with local service and
+CLI management checks; migration, removal, dependency, task, and security coverage remains.
+
+A separate isolated CLI smoke used a disposable home/application/project inside the
+checkout, an explicit Claude config, and a deliberately unavailable editor URL. It
+successfully migrated, registered a project, applied/reset a file override, published
+a shared edit, resolved the new rules, built Claude artifacts, and checked a write-free
+managed dry run. It started no model. Disposable fixtures were removed afterward.
+
+Final automated verification uses fake native children and in-process ASGI clients.
+Authenticated Claude/Codex structured-interface behavior, interactive approval callbacks,
+provider subscription availability, live Herdr 0.9.5 rendering, and native host isolation
+are not established by these tests. The managed runner does not implement interactive
+approval callbacks or OpenCode structured capture. Read conversation-memory.md for the
+implemented capability boundaries.
+
+The sections below are historical verification records; their former required-server
+and per-project manual-adoption contracts have been superseded.
+
 ## Installable application — October 29, 2026
 
 The full `python3 -m unittest discover -s tests -v` suite passed **133 tests**

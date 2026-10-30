@@ -28,9 +28,19 @@ class HerdrTests(unittest.TestCase):
                 with display_label('claude', 'developer - APP-123 - python'):
                     raise RuntimeError('child failed')
         self.assertEqual(run.call_args_list[0].args[0], ['/fake/herdr', 'pane', 'report-metadata',
-            'w1:p2', '--source', 'orbehelm:display', '--agent', 'claude',
-            '--display-agent', 'developer - APP-123 - python'])
-        self.assertEqual(run.call_args_list[1].args[0][-1], '--clear-display-agent')
+            'w1:p2', '--source', 'orbehelm:display',
+            '--display-agent', 'developer - APP-123 - python', '--title', 'developer - APP-123 - python'])
+        self.assertIn('--clear-display-agent', run.call_args_list[1].args[0])
+        self.assertIn('--clear-title', run.call_args_list[1].args[0])
+
+    def test_binary_discovery_uses_owner_binary_without_path(self):
+        with patch.dict(os.environ, {'HERDR_ENV': '1', 'HERDR_PANE_ID': 'w1:p2', 'HERDR_BIN_PATH': '/owner/herdr'}), \
+                patch('orbehelm.herdr.shutil.which', return_value=None), \
+                patch('orbehelm.herdr.subprocess.run') as run:
+            run.return_value.returncode = 0
+            with display_label('claude', 'developer'):
+                pass
+            self.assertEqual(run.call_args.args[0][0], '/owner/herdr')
 
     def test_outside_herdr_and_headless_do_not_report(self):
         for environment, enabled in [({'HERDR_ENV': '', 'HERDR_PANE_ID': ''}, True),

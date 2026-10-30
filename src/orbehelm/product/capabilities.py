@@ -63,6 +63,12 @@ def runtime_for(store, project, selection, agent, resolved, include_build=False)
                 if used['mcp'] != resolved['mcp']:
                     continue
                 runtime = stored_runtime(store.root, orbe.runtime_path)
+                from orbehelm.compatibility import orbe_record, read_record
+                metadata = orbe_record(runtime)
+                if metadata.is_file():
+                    record = read_record(metadata)
+                    if record.get('native_runtime'):
+                        runtime = stored_runtime(store.root, record['native_runtime'])
                 if runtime.is_dir():
                     return (runtime, Path(build.path)) if include_build else runtime
             except (OSError, ValueError, KeyError, OrbeHelmError):
@@ -104,7 +110,7 @@ def inventory(store, project, config, selection=None, agent=None):
     if selection is None:
         return data
     resolved = next(lock.resolved for lock in locks if lock.selection == selection)
-    catalog = verify_snapshot(store.root, release.snapshot)
+    catalog = verify_snapshot(store.root, config.catalog_snapshot or release.snapshot)
     runtime_details = runtime_for(store, project, selection, agent, resolved, include_build=True)
     runtime, output = runtime_details if runtime_details else (None, None)
     data['runtime'] = str(runtime) if runtime else None

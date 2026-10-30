@@ -92,8 +92,17 @@ class RenameTests(unittest.TestCase):
                 pointer.write_text(json.dumps({'session_id': orbe_id}))
                 before = {p: p.read_bytes() for p in runtime.rglob('*') if p.is_file()}
                 preview = launch(self.root, output, resolved, agent, dry_run=True)
-                self.assertIn('resume' if agent == 'codex' else '--continue', preview)
+                self.assertNotIn('--continue', preview)
+                self.assertNotIn('resume --last', preview)
                 self.assertEqual(before, {p: p.read_bytes() for p in runtime.rglob('*') if p.is_file()})
+                if agent == 'opencode':
+                    with patch('orbehelm.adapters.subprocess.call') as child:
+                        with self.assertRaisesRegex(OrbeHelmError, 'cannot yet verify recorded native-session resume'):
+                            launch(self.root, output, resolved, agent)
+                        child.assert_not_called()
+                    self.assertEqual(before, {p: p.read_bytes() for p in runtime.rglob('*') if p.is_file()})
+                    self.assertEqual(record.read_bytes(), original)
+                    continue
                 with patch('orbehelm.adapters.doctor', return_value={'ok': True}), \
                         patch('orbehelm.adapters.subprocess.call', return_value=0) as child:
                     launch(self.root, output, resolved, agent)

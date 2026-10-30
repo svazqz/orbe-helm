@@ -57,9 +57,10 @@ def migrate(root):
         path = database_path(root)
         if path.exists():
             backup = path.parent / "backups" / ("orbehelm-" + uuid.uuid4().hex + ".sqlite3")
-            backup.parent.mkdir(exist_ok=True)
+            backup.parent.mkdir(exist_ok=True, mode=0o700)
             with closing(sqlite3.connect(path)) as source, closing(sqlite3.connect(backup)) as target:
                 source.backup(target)
+            backup.chmod(0o600)
         engine = engine_for(root)
         try:
             with engine.connect() as connection:
@@ -78,6 +79,7 @@ def migrate(root):
                 connection.commit()
         finally:
             engine.dispose()
+        path.chmod(0o600)
     return str(path)
 
 
@@ -90,7 +92,7 @@ class Store:
         try:
             with self.engine.connect() as connection:
                 version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-                if version != "0003":
+                if version != "0006":
                     raise OrbeHelmError("Database needs migration; run oh migrate")
         except SQLAlchemyError as error:
             self.engine.dispose()

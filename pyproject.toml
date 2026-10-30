@@ -8,15 +8,15 @@ version = "0.1.0a1"
 description = "Compose reusable agent profiles and manage persistent orbes"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.115,<1",
     "SQLAlchemy>=2.0,<2.1",
     "alembic>=1.15,<2",
-    "Jinja2>=3.1.6,<4",
-    "uvicorn>=0.34,<1",
+    "sqlite-vec==0.1.9",
 ]
 
 [project.optional-dependencies]
-dev = ["httpx>=0.28,<1"]
+memory = ["fastembed==0.9.1"]
+web = ["fastapi>=0.115,<1", "Jinja2>=3.1.6,<4", "uvicorn>=0.34,<1"]
+dev = ["httpx>=0.28,<1", "fastapi>=0.115,<1", "Jinja2>=3.1.6,<4", "uvicorn>=0.34,<1"]
 
 [tool.setuptools.package-data]
 "orbehelm.product" = ["templates/*.html", "static/*.css", "migrations/*.py", "migrations/*.mako", "migrations/versions/*.py"]

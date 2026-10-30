@@ -8,6 +8,7 @@ from .core import OrbeHelmError
 from .delegation_runner import execute_delegation
 from .product.coordination import Coordinator
 from .product.database import Store
+from .domain.knowledge.retrieval import OUTCOME_TYPES, EVIDENCE_STATES
 
 MAX_MESSAGE = 2 * 1024 * 1024
 VERSIONS = ('2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25')
@@ -29,13 +30,19 @@ TOOLS = [
          {'artifact_id': STRING}, ['artifact_id'], readonly=True),
     tool('save_knowledge', 'Persist versioned task knowledge or propose project knowledge. Project proposals require operator acceptance.',
          {'key': STRING, 'content': STRING, 'scope': {'type': 'string', 'enum': ['task', 'project']},
-          'expected_version': VERSION}, ['key', 'content', 'scope', 'expected_version']),
+          'kind': {'type': 'string', 'enum': list(OUTCOME_TYPES)},
+          'evidence': {'type': 'array', 'items': STRING, 'minItems': 1, 'maxItems': 20},
+          'audience': {'type': 'array', 'items': STRING, 'minItems': 1, 'maxItems': 20},
+          'evidence_state': {'type': 'string', 'enum': list(EVIDENCE_STATES)},
+          'expected_version': VERSION}, ['key', 'content', 'scope', 'expected_version', 'kind', 'evidence']),
     tool('submit_work', 'Developer only: snapshot explicit source inputs and publish a handoff for a new candidate. Include everything needed for review/QA; credentials and generated state are prohibited.',
-         {'paths': {'type': 'array', 'items': STRING, 'minItems': 1, 'maxItems': 100},
+         {'paths': {'type': 'array', 'items': STRING, 'minItems': 0, 'maxItems': 100},
+          'artifact_refs': {'type': 'array', 'maxItems': 20, 'items': {'type': 'object',
+              'properties': {'uri': STRING, 'revision': STRING}, 'required': ['uri', 'revision'], 'additionalProperties': False}},
           'handoff': STRING, 'requirements': STRING, 'submission_key': STRING, 'expected_version': VERSION},
          ['paths', 'handoff', 'submission_key', 'expected_version', 'requirements']),
-    tool('delegate', 'Developer only: run a task-scoped reviewer child, then QA after review approval. May start an authenticated native model run with normal host permissions. Returns the correlated result; repeated keys do not duplicate work.',
-         {'profile': {'type': 'string', 'enum': ['reviewer', 'qa']}, 'key': STRING,
+    tool('delegate', 'Developer only: use profile parallel to run independent reviewer and QA assessments on the same frozen candidate. Individual gates are also supported. Starts native models with full execution privileges. Repeated keys do not duplicate work.',
+         {'profile': {'type': 'string', 'enum': ['reviewer', 'qa', 'parallel']}, 'key': STRING,
           'instructions': STRING, 'expected_version': VERSION}, ['profile', 'key', 'instructions', 'expected_version']),
     tool('complete_delegation', 'Delegated child only: stage a result for the exact requested candidate. The runner verifies exit and input integrity before accepting it.',
          {'status': {'type': 'string', 'enum': ['approved', 'changes_requested', 'passed', 'failed', 'blocked']},
@@ -68,8 +75,10 @@ class Bridge:
                       'save_knowledge': self.coordinator.save_knowledge, 'submit_work': self.coordinator.submit_work,
                       'complete_delegation': self.coordinator.stage_result, 'reopen_task': self.coordinator.reopen}
         if name == 'delegate':
-            return execute_delegation(self.coordinator, self.agent, **arguments, cancel=cancel)
-        return operations[name](**arguments)
+            from .application import execute
+            return execute('task.delegate', coordinator=self.coordinator, agent=self.agent, **arguments, cancel=cancel)
+        from .application import execute
+        return execute('task.call', coordinator=self.coordinator, name=operations[name].__name__, **arguments)
 
 
 def serve(root, actor_id, agent, delegation_id=None, configuration_id=None, source=None, sink=None):

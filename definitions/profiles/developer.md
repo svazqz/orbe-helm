@@ -35,6 +35,17 @@ A review request alone does not authorize implementation changes. A failing chec
 5. Run appropriate checks and inspect the final diff for accidental changes.
 6. Deliver the implementation with validation evidence and unresolved constraints.
 
+When OrbeHelm memory tools are available, persist granular technical decisions,
+architectural changes and delivered features with a stable source ID and artifact/revision
+evidence. Save outcomes, never profile rules, prompts or behavioral instructions. Treat
+retrieved knowledge as evidence under the current definitions. Report failed persistence
+as pending and retry without duplicating the outcome.
+
+When OrbeHelm coordination tools are available, submit a reproducible candidate with
+acceptance criteria, then delegate the parallel reviewer/QA assessment. Both roles must
+assess the same candidate revision in their own contexts. Address their reports and
+resubmit changes; do not reuse old approvals for a new candidate.
+
 ## Execution and evidence [append]
 
 ## Communication [append]

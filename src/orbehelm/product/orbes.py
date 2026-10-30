@@ -53,8 +53,16 @@ def finish_launch(store, launch_id, record):
         row.ended_at = now()
 
 
-def slot_running(root, key):
-    path = orbe_slot(root, key) / 'launch.lock'
+def slot_running(root, key, conversation_id=None):
+    if conversation_id:
+        try:
+            if uuid.UUID(conversation_id).hex != conversation_id:
+                return False
+        except (ValueError, TypeError):
+            return False
+        path = Path(root) / 'state/conversation-locks' / (conversation_id + '.lock')
+    else:
+        path = orbe_slot(root, key) / 'launch.lock'
     if not path.exists():
         return False
     with path.open('r') as handle:
@@ -136,6 +144,15 @@ def orbe_details(store, orbe_id=None, project_id=None):
             from .models import Project
             project = db.get(Project, row.project_id)
             latest = launches[-1] if launches else None
+            from orbehelm.layout import stored_runtime
+            try:
+                metadata = stored_runtime(store.root, row.runtime_path) / 'orbe.json'
+                if metadata.is_symlink():
+                    raise OrbeHelmError('Orbe metadata must not be a symlink')
+                record = read_record(metadata) if metadata.is_file() else {}
+            except (OSError, OrbeHelmError, ValueError):
+                record = {}
+            thread = record.get('conversation_id') if record.get('mode') == 'managed' else None
             pending = bool(latest and latest.configuration_id != project.active_revision)
             if latest and latest.selection and latest.build_id:
                 from .projects import configuration_for, resolve_configuration
@@ -150,7 +167,11 @@ def orbe_details(store, orbe_id=None, project_id=None):
                 'profile': slot.profile, 'spec': slot.specialization, 'agent': slot.agent,
                 'unique_key': slot.unique_key,
                 'active': slot.active_orbe == row.id,
-                'running': slot.active_orbe == row.id and slot_running(store.root, row.slot_key),
+                'running': slot.active_orbe == row.id and bool(latest and latest.status == 'running') and slot_running(store.root, row.slot_key, thread),
+                'conversation_id': record.get('conversation_id'),
+                'workstream_id': record.get('workstream_id'), 'context_id': record.get('context_id'),
+                'policy_digest': record.get('policy_digest'), 'native_generation': record.get('native_generation'),
+                'native_session_id': record.get('native_session_id'), 'resume_reason': record.get('resume_reason'),
                 'runtime_path': row.runtime_path, 'legacy': row.legacy,
                 'pending': pending,
                 'launches': [{key: getattr(launch, key) for key in ('id', 'configuration_id', 'build_id',

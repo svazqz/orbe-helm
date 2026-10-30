@@ -211,34 +211,43 @@ class OrbeHelmTests(unittest.TestCase):
         self.assertEqual(child.call_args.kwargs['env']['ORBEHELM_AGENT_LABEL'],
                          'developer - APP-123 - python')
 
-    def test_sessions_reuse_runtime_and_resume_each_adapter(self):
-        for agent in ("codex", "claude", "opencode"):
+    def test_known_sessions_resume_exact_ids_and_unknown_adapters_start_fresh(self):
+        import uuid
+        for agent in ('codex', 'claude', 'opencode'):
             result = self.resolved()
             output, _ = build(self.root, result, agent)
-            with patch("orbehelm.adapters.doctor", return_value={"ok": True}), \
-                    patch("orbehelm.adapters.subprocess.call", return_value=0) as child:
-                launch(self.root, output, result, agent)
-                first_env = child.call_args.kwargs["env"]
-                if agent == "codex":
-                    transcript = Path(first_env["CODEX_HOME"]) / "sessions/first.jsonl"
-                elif agent == "claude":
-                    transcript = Path(first_env["CLAUDE_CONFIG_DIR"]) / "projects/work/first.jsonl"
+            if agent == 'opencode':
+                with patch('orbehelm.adapters.subprocess.call') as child:
+                    with self.assertRaisesRegex(OrbeHelmError, 'cannot yet verify recorded native-session resume'):
+                        launch(self.root, output, result, agent)
+                    child.assert_not_called()
+                continue
+            session = str(uuid.uuid4())
+            def child_run(*args, **kwargs):
+                env = kwargs['env']
+                if agent == 'codex':
+                    path = Path(env['CODEX_HOME']) / 'sessions' / (session + '.jsonl')
+                    event = {'type': 'session_meta', 'payload': {'id': session}}
+                elif agent == 'claude':
+                    path = Path(env['CLAUDE_CONFIG_DIR']) / 'projects/work' / (session + '.jsonl')
+                    event = {'type': 'assistant', 'message': {'content': 'test response'}}
                 else:
-                    transcript = Path(first_env["XDG_DATA_HOME"]) / "opencode/placeholder"
-                transcript.parent.mkdir(parents=True, exist_ok=True)
-                transcript.write_text("test transcript")
-                launch(self.root, output, result, agent, "continue task")
-                self.assertEqual(child.call_args.kwargs["env"], first_env)
-                args = child.call_args.args[0]
-                self.assertIn("--last" if agent == "codex" else "--continue", args)
-                self.assertEqual(args[-1], "continue task")
-                launch(self.root, output, result, agent, new_orbe=True)
-                fresh_env = child.call_args.kwargs["env"]
-                self.assertNotEqual(first_env, fresh_env)
-                self.assertNotIn("--continue", child.call_args.args[0])
-                self.assertTrue(transcript.exists())
+                    return 0
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(event) + '\n')
+                return 0
+            with patch('orbehelm.adapters.doctor', return_value={'ok': True}), patch('orbehelm.adapters.subprocess.call', side_effect=child_run) as child:
                 launch(self.root, output, result, agent)
-                self.assertEqual(child.call_args.kwargs["env"], fresh_env)
+                first_env = child.call_args.kwargs['env']
+                launch(self.root, output, result, agent, 'continue task')
+                self.assertEqual(child.call_args.kwargs['env'], first_env)
+                args = child.call_args.args[0]
+                if agent != 'opencode':
+                    self.assertIn(session, args)
+                self.assertNotIn('--continue', args)
+                self.assertNotIn('--last', args)
+                launch(self.root, output, result, agent, new_orbe=True)
+                self.assertNotEqual(child.call_args.kwargs['env'], first_env)
 
     def test_session_metadata_reaches_children_and_tracks_reuse_and_rotation(self):
         names = ("ORBEHELM_ORBE_ID", "ORBEHELM_ORBE_DIR", "ORBEHELM_PROFILE",
@@ -253,6 +262,12 @@ class OrbeHelmTests(unittest.TestCase):
         for agent in ("codex", "claude", "opencode"):
             result = self.resolved(spec="python")
             output, _ = build(self.root, result, agent)
+            if agent == 'opencode':
+                previous = observed.read_bytes() if observed.exists() else None
+                with self.assertRaisesRegex(OrbeHelmError, 'cannot yet verify recorded native-session resume'):
+                    launch(self.root, output, result, agent)
+                self.assertEqual(observed.read_bytes() if observed.exists() else None, previous)
+                continue
             before = {p: p.read_bytes() for p in output.rglob("*") if p.is_file()}
             with patch.dict(os.environ, inherited), \
                     patch("orbehelm.adapters.doctor", return_value={"ok": True}), \
@@ -295,7 +310,7 @@ class OrbeHelmTests(unittest.TestCase):
         transcript.write_text("saved")
         before = {str(p): p.read_bytes() for p in self.root.rglob("*") if p.is_file()}
         plan = launch(self.root, output, result, "codex", dry_run=True)
-        self.assertIn("resume --last", plan)
+        self.assertNotIn("resume --last", plan)
         self.assertIn(str(home), plan)
         fresh = launch(self.root, output, result, "codex", dry_run=True, new_orbe=True)
         self.assertNotIn("resume", fresh)
@@ -309,11 +324,14 @@ class OrbeHelmTests(unittest.TestCase):
                 patch("orbehelm.adapters.subprocess.call", return_value=0) as child:
             launch(self.root, output, result, "codex")
             home = child.call_args.kwargs["env"]["CODEX_HOME"]
+            first_generation = json.loads((Path(home).parent / 'orbe.json').read_text())['native_generation']
             changed = resolve(self.root, project=self.project, skillsets=["quality"])
             new_output, _ = build(self.root, changed)
             launch(self.root, new_output, changed, "codex")
             self.assertEqual(child.call_args.kwargs["env"]["CODEX_HOME"], home)
-            self.assertEqual((Path(home) / "config.toml").read_bytes(),
+            self.assertNotEqual(json.loads((Path(home).parent / 'orbe.json').read_text())['native_generation'], first_generation)
+            self.assertNotIn('--last', child.call_args.args[0])
+            self.assertEqual((Path(child.call_args.kwargs["env"]["CODEX_HOME"]) / "config.toml").read_bytes(),
                              (new_output / "config.toml").read_bytes())
             specialized = resolve(self.root, spec="python", project=self.project)
             specialized_output, _ = build(self.root, specialized)
@@ -550,7 +568,9 @@ class OrbeHelmTests(unittest.TestCase):
                         self.assertEqual(config["developer_instructions"], text)
                     elif agent == "claude":
                         from orbehelm.adapters import command
-                        self.assertEqual(command(output, agent)[2], str(output / "instructions.md"))
+                        argv = command(output, agent)
+                        self.assertEqual(argv[argv.index('--append-system-prompt-file') + 1], str(output / "instructions.md"))
+                        self.assertIn('--dangerously-skip-permissions', argv)
                     else:
                         self.assertEqual(json.loads((output / "opencode.json").read_text())["instructions"],
                                          [str(output / "instructions.md")])

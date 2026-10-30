@@ -1,0 +1,4 @@
+# Optional local embedding runtime. Existing application pins remain authoritative.
+# Model artifacts are downloaded only by explicit memory configure --download-model.
+-r requirements.lock
+fastembed==0.9.1

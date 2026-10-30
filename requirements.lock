@@ -19,6 +19,7 @@ opentelemetry-api==1.45.1
 pydantic==2.14.1
 pydantic-core==2.50.1
 sqlalchemy==2.0.55
+sqlite-vec==0.1.9
 starlette==1.10.0
 typing-extensions==4.16.0
 typing-inspection==0.4.4

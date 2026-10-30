@@ -112,6 +112,14 @@ PY
 
 Replace the profile/spec with the new selection; omit `spec` for a profile alone. Pass `skillsets=("example",)` or `skills=("example",)` to check those additions. Check the composed text for duplication, contradictory additions, and unintended overrides. Validate every new specialization or bundle, including its dependencies. Run `python3 -m unittest discover -s tests -v` after behavior changes. Report checks actually performed and any unresolved external prerequisites.
 
-For CLI checks, use a disposable HOME and explicit configuration stored inside this checkout. Use `--agent=claude` when Claude is requested; never assume Codex is installed. `oh --dry-run` starts no model session, but operates on the project's pinned configuration and requires prior project registration. It does not publish edited source drafts, and cold remote skill checks may use the network. Do not register or update the user's real project merely for verification.
+For CLI checks, use a disposable HOME and explicit configuration stored inside this checkout. Use `--agent=claude` when Claude is requested; never assume Codex is installed. `oh --dry-run` starts no model session, but operates on the project's published effective configuration and requires prior project registration. It does not publish edited source drafts, and cold remote skill checks may use the network. Do not register or update the user's real project merely for verification.
 
-Explain activation separately: normal build/run publishes changed source definitions as a catalog release, but existing projects keep their selected release. They must preview and adopt the update through the UI or `oh projects preview` / `oh projects update`. Refresh project context with `oh projects refresh` when appropriate. Authoring alone does not update an installed copy on another machine; deliver the source changes for that checkout and follow its installation/update workflow. See `docs/configuration.md` and `docs/installation.md` for lifecycle and command details.
+Explain activation separately: normal build/run or explicit publication validates shared
+source changes and makes them effective for every project's next launch. Local file
+overrides remain in effect until reset. No running web server or per-project adoption
+is required. Refresh externally changed project context with `oh projects refresh`.
+Changed effective rules start a fresh native conversation; managed `oh chat` retains
+captured history and supplies a bounded handoff. Authoring alone does not synchronize
+another installation: deliver its source changes and run the installation/update
+workflow there. See `docs/configuration.md`, `docs/conversation-memory.md`, and
+`docs/installation.md` for the current lifecycle.

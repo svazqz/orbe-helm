@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 import uuid
+import sqlite3
 from unittest.mock import MagicMock, Mock, patch
 from urllib.error import URLError
 
@@ -84,33 +85,26 @@ class InstallationTests(unittest.TestCase):
                 self.assertFalse(server_status(self.root)['ready'])
         with patch('orbehelm.service.build_opener') as factory:
             factory.return_value.open.side_effect = URLError('offline')
-            with self.assertRaisesRegex(OrbeHelmError, 'oh server start'):
-                require_server(self.root)
+            self.assertTrue(require_server(self.root)['local'])
+            factory.assert_not_called()
         for url in ('https://example.com', 'http://127.0.0.1:0', 'http://user@localhost:8765'):
             with patch.dict(os.environ, {'ORBEHELM_SERVER_URL': url}):
                 with self.assertRaises(OrbeHelmError):
                     server_status(self.root)
 
-    def test_stopped_server_blocks_cli_adapter_and_delegation_before_mutation(self):
-        before = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
-        network, opener = self.network(status=503)
-        with network, contextlib.redirect_stderr(io.StringIO()) as error:
-            self.assertEqual(main(['--root', str(self.root), '--project', str(self.work)]), 2)
-        self.assertIn('oh server start', error.getvalue())
-        self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
+    def test_native_launch_uses_local_storage_without_a_running_server(self):
         resolved = resolve(self.root, project=self.work)
-        with network, patch('orbehelm.adapters.doctor') as doctor, \
-                patch('orbehelm.adapters.subprocess.call') as child:
-            with self.assertRaises(OrbeHelmError):
-                launch(self.root, self.root / 'generated/unused', resolved, 'codex')
-        doctor.assert_not_called()
-        child.assert_not_called()
-        coordinator = Mock()
-        coordinator.store.root = self.root
-        with network, self.assertRaises(OrbeHelmError):
-            execute_delegation(coordinator, 'codex', 'reviewer', 'one', 'Review', 0)
-        coordinator.create_delegation.assert_not_called()
-        self.assertFalse((self.root / 'state').exists())
+        from orbehelm.core import build
+        output, _ = build(self.root, resolved, 'claude')
+        with patch('orbehelm.service.build_opener', side_effect=AssertionError('No HTTP required')), patch('orbehelm.adapters.doctor', return_value={'ok': True}), patch('orbehelm.adapters.subprocess.call', return_value=0) as child:
+            self.assertEqual(launch(self.root, output, resolved, 'claude'), 0)
+        child.assert_called_once()
+        self.installed()
+        data = json.loads((self.root / 'installation.json').read_text())
+        data['complete'] = False
+        (self.root / 'installation.json').write_text(json.dumps(data))
+        with self.assertRaisesRegex(OrbeHelmError, 'incomplete'):
+            require_server(self.root)
 
     def test_dry_run_never_checks_server_or_creates_storage(self):
         self.installed()
@@ -247,15 +241,22 @@ class InstallationTests(unittest.TestCase):
         self.assertEqual(metadata['orbes_home'], str(home))
         self.assertEqual(metadata['server_url'], 'http://127.0.0.1:49871')
         self.assertTrue(metadata['complete'])
+        self.assertEqual((destination / 'CHANGELOG.md').read_bytes(), (REPO / 'CHANGELOG.md').read_bytes())
+        with contextlib.closing(sqlite3.connect(destination / 'state/orbehelm.sqlite3')) as database:
+            self.assertEqual(database.execute('SELECT version_num FROM alembic_version').fetchone()[0], '0006')
+        for relative in ('adapters.py', 'memory_runtime.py', 'domain/orbes/identity.py',
+                         'product/coordination.py', 'product/migrations/versions/0006_persistent_workflows.py'):
+            self.assertEqual((destination / 'src/orbehelm' / relative).read_bytes(),
+                             (REPO / 'src/orbehelm' / relative).read_bytes())
         self.assertIn('Keep this customization.', definition.read_text())
         self.assertEqual(record.read_bytes(), original)
         version = subprocess.run([str(launcher), '--version'], env=env, cwd=self.work,
             capture_output=True, text=True, check=True)
         self.assertIn('0.1.0a1', version.stdout)
-        stopped = subprocess.run([str(launcher), '--project', str(self.work)], env=env,
+        stopped = subprocess.run([str(launcher), '--project', str(self.work), '--agent=missing'], env=env,
             cwd=self.work, capture_output=True, text=True)
         self.assertEqual(stopped.returncode, 2)
-        self.assertIn('oh server start', stopped.stderr)
+        self.assertIn('invalid choice', stopped.stderr)
         self.assertEqual(record.read_bytes(), original)
 
     def test_setup_rejects_missing_python_and_unmanaged_destination(self):

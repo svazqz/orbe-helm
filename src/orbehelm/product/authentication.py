@@ -17,13 +17,11 @@ def login_command(agent, runtime, output, server):
     identifier(server)
     runtime, output = Path(runtime), Path(output)
     env = os.environ.copy()
-    if agent == 'codex':
-        env['CODEX_HOME'] = str(runtime / 'codex-home')
-        command = ['codex', 'mcp', 'login', server]
-    elif agent == 'claude':
-        env['CLAUDE_CONFIG_DIR'] = str(runtime / 'claude-home')
-        command = ['claude', '--strict-mcp-config', '--mcp-config', str(output / 'mcp.json'),
-                   '--setting-sources', '', 'mcp', 'login', server]
+    if agent in {'codex', 'claude'}:
+        from orbehelm.plugin_registry import agent_adapter
+        plan, overrides = agent_adapter(agent).login_command(str(runtime), str(output), server)
+        command = list(plan.argv)
+        env.update(overrides)
     elif agent == 'opencode':
         env.update(OPENCODE_CONFIG_CONTENT=json.dumps(json.loads((output / 'opencode.json').read_text())),
                    XDG_DATA_HOME=str(runtime / 'data'), XDG_STATE_HOME=str(runtime / 'state'),

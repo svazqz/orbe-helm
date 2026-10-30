@@ -5,8 +5,7 @@ from pathlib import Path
 from .layout import runtime_base
 
 
-LEGACY_MARKER = "<!-- agentic:sections:v1 -->"
-LEGACY_SECTION_PREFIX = "<!-- agentic:sections"
+from .domain.definitions.formats import LEGACY_MARKER, LEGACY_SECTION_PREFIX
 
 
 def existing_path(root, current, previous):

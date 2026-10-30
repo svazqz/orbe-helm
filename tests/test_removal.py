@@ -132,9 +132,7 @@ class RemovalTests(unittest.TestCase):
         path.write_text(json.dumps(data))
         release = reconcile_catalog(self.store)
         usage = shared_usage(self.store, release, 'mcp', 'removable')
-        self.assertTrue(any('Profile developer' in item['label'] and item['label'].startswith('Project') for item in usage))
-        with self.assertRaises(Conflict):
-            remove_registration(self.store, 'mcp', 'removable', release.id)
+        self.assertFalse(any('Profile developer' in item['label'] for item in usage))
         self.adopt(release)
         remove_registration(self.store, 'mcp', 'removable', release.id)
         release = add_skill(self.store, {'name': 'launch-only', 'source': 'examples/skills/review',
@@ -158,7 +156,7 @@ class RemovalTests(unittest.TestCase):
         self.assertFalse((self.root / 'registry/mcp/removable.json').exists())
         self.assertTrue((verify_snapshot(self.root, release.snapshot) / 'registry/mcp/removable.json').exists())
         self.assertTrue(output.is_dir())
-        self.assertEqual(self.config().id, selected)
+        self.assertNotEqual(self.config().id, selected)
         skill_release = add_skill(self.store, {'name': 'unused-skill', 'source': 'examples/skills/review',
                                                'expected_release': new_release.id})
         remove_registration(self.store, 'skills', 'unused-skill', skill_release.id)
@@ -275,13 +273,9 @@ class RemovalTests(unittest.TestCase):
             self.assertNotIn('<button>Remove from shared library</button>', blocked_preview.text)
             project_url = f'/projects/{self.project.id}/dependencies/mcp/removable/remove'
             project_preview = client.get(project_url)
-            self.assertEqual(project_preview.status_code, 200)
+            self.assertEqual(project_preview.status_code, 404)
             config = self.config()
-            self.assertEqual(client.post(project_url, data={'expected': config.id}).status_code, 403)
-            removed = client.post(project_url, data={'expected': config.id, 'csrf': token})
-            self.assertEqual(removed.status_code, 200)
-            self.assertIn('Project addition removed', removed.text)
-            self.assertNotIn(f'href="{project_url}"', removed.text)
+            remove_project_dependency(self.store, self.project, 'mcp', 'removable', config.id)
             removed_shared = client.post(shared, data={'expected': release.id, 'csrf': token})
             self.assertEqual(removed_shared.status_code, 200)
             self.assertIn('removed from the shared library', removed_shared.text)
