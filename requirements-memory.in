@@ -1,0 +1,3 @@
+# Resolve with pip-tools on each supported target; public model weights are separate.
+-r requirements.lock
+fastembed==0.9.1

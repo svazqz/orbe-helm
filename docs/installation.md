@@ -14,7 +14,7 @@ an agent. See [knowledge memory](knowledge-memory.md) for visibility and retriev
 The installer requires Python 3.11 or later. It detects a suitable `python3`,
 `python3.13`, `python3.12`, or `python3.11`; set `ORBEHELM_PYTHON` to select a
 specific executable. It checks `venv` and `ensurepip`, creates a private application
-virtual environment, installs `requirements.lock`, checks runtime imports, and
+virtual environment, installs the hash-checked `requirements-runtime.lock` generated from reviewed runtime pins, checks runtime imports, and
 initializes the database. The first installation normally needs access to the Python
 package index. Missing system Python/venv packages produce an actionable error;
 the installer does not invoke sudo or a system package manager.
@@ -28,7 +28,7 @@ failure stops setup; it does not leave a success message or update PATH.
 | Location | Contents |
 | --- | --- |
 | `~/bin/orbehelm/src/orbehelm/` | Application, server, templates, and static files |
-| `~/bin/orbehelm/.venv/` | Application Python environment and dependencies |
+| `~/bin/orbehelm/state/installations/ID/venv/` | Validated application environment; older environments retained for recovery |
 | `~/bin/orbehelm/bin/oh` | Launcher that selects this application and its Python environment |
 | `~/bin/orbehelm/state/orbehelm.sqlite3` | Database, alongside snapshots, builds, backups, and server application state |
 | `~/bin/orbehelm/definitions/`, `registry/`, `examples/` | Editable authoritative definitions and local skill resources |
@@ -114,8 +114,8 @@ Bundled sources are updated using the rules below; local customizations are reta
 refuses an unmanaged nonempty application directory or a different orbe home for
 an existing installation. Changing storage paths requires a separate migration.
 
-`--offline` adds pip's `--no-index`; dependencies must already be available in the
-application environment or pip's available local sources. It does not bypass
+`--offline` adds pip's `--no-index`; dependencies must be available from pip's local sources (for example a wheelhouse
+selected with PIP_FIND_LINKS). Each candidate uses a fresh environment. It does not bypass
 dependency checks. If setup fails after creating directories, fix the reported
 prerequisite and rerun it with the same options. PATH updates occur only after
 application initialization succeeds.
@@ -178,3 +178,36 @@ file replacements remain in effect until reset. Source-only project revisions ar
 created without rebuilding or contacting remote dependencies. Running conversations
 retain their captured configuration; managed chat checks rules between turns.
 See [conversation memory](conversation-memory.md) for cross-agent history and policy refresh.
+
+
+## Staging and failed-update recovery
+
+Finish active sessions and stop the editor before updating. Setup/update prepares a
+candidate source tree and a fresh environment under `state/installations/ID/`.
+Dependencies, `pip check`, imports and CLI version are verified before replacing active
+files. The environment is created at its permanent path: virtualenv scripts are not
+relocated. Existing `.venv` environments are retained for historical launchers.
+
+Activation takes an installation lock, rejects a concurrently changed manifest or
+bundled-source fingerprint, marks
+the installation incomplete, and retains replaced source, definitions, documentation,
+launcher and metadata under `state/installations/ID/previous/`. The activation journal
+records progress. Normal launches refuse the incomplete marker during switching.
+Caught failures before migration restore previous files and metadata. A process kill
+or power loss may require manual recovery; the journal is evidence, not a promise of
+an atomic filesystem/database transaction.
+
+A migration failure deliberately retains the new incomplete installation and old files
+rather than running old code against a possibly changed schema. First fix the reported
+cause and rerun update from the reviewed source. If rollback is required, stop all
+processes, retain the current installation for diagnosis, and restore the matching
+application files/launcher/manifest from `previous/` together with a compatible database
+backup from `state/backups/`. Restore SQLite with its backup API, not by copying over
+an open database. Database backup and application recovery are separate operations;
+checking out an older tag alone does not downgrade the database.
+
+Review `activation.json`, the saved manifest's environment/launcher and database schema
+before restoring. Do not delete retained release environments while their paths are
+referenced by an active or recovery launcher. Automatic garbage collection and an
+operator rollback command are intentionally not provided. Staging uses extra disk
+space; periodically review retained successful releases after backup/restore checks.

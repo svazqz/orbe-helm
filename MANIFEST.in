@@ -1,0 +1,21 @@
+include oh setup.sh update.sh README.md CHANGELOG.md AGENTS.md requirements*.lock requirements*.in
+recursive-include definitions *
+recursive-include registry *
+recursive-include examples *
+recursive-include skills *
+recursive-include scripts *.py
+recursive-include docs *.md
+include tests/*.py tests/*.json
+recursive-include tests/application *.py
+recursive-include tests/architecture *.py
+recursive-include tests/domain *.py
+recursive-include tests/infrastructure *.py
+recursive-include tests/memory *.py
+recursive-include tests/plugins *.py
+recursive-include tests/fixtures *.json
+recursive-include plan *.md
+prune state
+prune legacy
+prune .venv
+global-exclude __pycache__ *.py[cod] .DS_Store
+prune tests/tmp*

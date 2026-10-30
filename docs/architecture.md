@@ -69,14 +69,17 @@ No development command modifies global agent configuration or imports credential
 project/profile/specialization/task selection, excluding agent choice. Explicit working
 checkpoints have their own audit events. `managed.py` owns terminal input and structured
 Claude/Codex execution, captures events incrementally, and links agent-specific native
-attempts to that ledger. It preserves native permission policy; interactive tool-approval
-callbacks are not yet implemented in this structured runner. Explicit process-scoped
-Claude tool grants are audited and included in the managed policy digest.
+attempts to that ledger. Runtime commands request full access as defined in persistent-workflows.md; OS and
+provider trust requirements still apply. Interactive approval callbacks are not
+implemented in the structured runner. Process-scoped Claude tool rules remain
+audited and included in the managed policy digest.
 
 `sessions.py` computes a semantic policy digest, independent of timestamps, physical
 paths, unrelated definitions, and labels. Exact-ID resume is permitted only for an
 unchanged active policy/agent. Changed rules or agent choice start a fresh native
-conversation and inject a bounded historical handoff. Native transcripts and ledger
+conversation and inject a bounded historical handoff when memory is enabled.
+With memory disabled, native continuity instead retains the recorded session and
+requires an explicit reread of the stable current-instructions file. Native transcripts and ledger
 history are retained; this does not preserve an identical model context window.
 
 `native_capture.py` offers best-effort transcript capture for native interactive

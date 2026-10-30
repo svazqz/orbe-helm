@@ -232,7 +232,11 @@ class LocalMemoryTests(unittest.TestCase):
             launch(self.root, new_output, updated, 'claude')
             self.assertEqual(child.call_args.kwargs['env']['CLAUDE_CONFIG_DIR'], old_home)
             self.assertNotIn('--resume', child.call_args.args[0])
-            self.assertIn('Remember the chosen interface', child.call_args.args[0][-1])
+            args = child.call_args.args[0]
+            self.assertNotIn('Continue the recorded work, or ask the user what to do next.', args)
+            self.assertFalse(any('Historical OrbeHelm conversation context' in arg for arg in args))
+            instructions = Path(args[args.index('--append-system-prompt-file') + 1])
+            self.assertIn('Remember the chosen interface', instructions.read_text())
         thread = conversation(self.store, self.project.id, 'developer')
         self.assertTrue(events(self.store, thread, query='Remember the chosen interface'))
 

@@ -13,5 +13,5 @@ class Request:
     idempotency_key: str | None = None
     expected_revision: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, 'payload', MappingProxyType(dict(self.payload)))

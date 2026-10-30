@@ -5,7 +5,7 @@ from typing import Protocol, Mapping
 from ...domain.shared.errors import UnsupportedCapability, OrbeHelmError
 
 
-def validate_access(access):
+def validate_access(access: str) -> None:
     if access not in {'read-only', 'workspace-write', 'full-access'}:
         raise OrbeHelmError('Unknown workspace access intent')
 
@@ -29,7 +29,7 @@ class AdapterCapabilities:
     adapter_id: str
     entries: tuple[Capability, ...]
 
-    def require(self, name: str):
+    def require(self, name: str) -> None:
         capability = next((item for item in self.entries if item.name == name), None)
         if capability is None or capability.support != Support.FULL:
             raise UnsupportedCapability(f'{self.adapter_id}: capability {name} is not fully supported')

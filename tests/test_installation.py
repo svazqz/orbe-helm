@@ -214,7 +214,8 @@ class InstallationTests(unittest.TestCase):
         rc.write_text('# keep my settings\n')
         command = [str(REPO / 'setup.sh'), '--install-dir', str(destination), '--orbes-dir', str(home),
                    '--shell', 'zsh', '--port', '49871', '--offline']
-        env = {**os.environ, 'ORBEHELM_PYTHON': sys.executable}
+        env = {**os.environ, 'ORBEHELM_PYTHON': sys.executable,
+               'PYTHONPATH': str(dependency_site)}
         result = subprocess.run(command, env=env, cwd=self.work, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         launcher = destination / 'bin/oh'
@@ -259,6 +260,85 @@ class InstallationTests(unittest.TestCase):
         self.assertEqual(stopped.returncode, 2)
         self.assertIn('invalid choice', stopped.stderr)
         self.assertEqual(record.read_bytes(), original)
+
+    def test_dependency_failure_preserves_active_application_and_environment(self):
+        from orbehelm.installer import prepare_candidate
+        self.installed()
+        (self.root / 'state').mkdir()
+        (self.root / 'src').mkdir()
+        (self.root / 'src/old.py').write_text('previous code')
+        (self.root / '.venv').mkdir()
+        (self.root / '.venv/marker').write_text('previous environment')
+        before = {str(p.relative_to(self.root)): p.read_bytes()
+                  for p in self.root.rglob('*') if p.is_file()}
+        data = {'version': 'candidate', 'memory_extra': False}
+        with patch('orbehelm.installer.subprocess.run', side_effect=[None,
+                   subprocess.CalledProcessError(1, ['pip', 'install'])]):
+            with self.assertRaises(subprocess.CalledProcessError):
+                prepare_candidate(REPO, self.root, json.loads((self.root / 'installation.json').read_text()), data, True)
+        after = {str(p.relative_to(self.root)): p.read_bytes()
+                 for p in self.root.rglob('*') if p.is_file()}
+        self.assertEqual(before, after)
+
+    def activation_fixture(self):
+        self.installed()
+        (self.root / 'state').mkdir(exist_ok=True)
+        (self.root / 'src').mkdir()
+        (self.root / 'src/old.py').write_text('previous code')
+        (self.root / 'bin').mkdir()
+        (self.root / 'bin/oh').write_text('previous launcher')
+        (self.root / 'README.md').write_text('previous readme')
+        release = self.root / 'state/installations/candidate'
+        candidate = release / 'candidate'
+        (candidate / 'src').mkdir(parents=True)
+        (candidate / 'src/new.py').write_text('candidate code')
+        (candidate / 'README.md').write_text('candidate readme')
+        from orbehelm.installer import bundled_state
+        (release / 'source-state.json').write_text(json.dumps(bundled_state(self.root)))
+        previous = json.loads((self.root / 'installation.json').read_text())
+        return candidate, release / 'venv/bin/python3', previous
+
+    def test_activation_rejects_source_edits_since_preparation(self):
+        from orbehelm.installer import activate_candidate
+        candidate, python, previous = self.activation_fixture()
+        definition = self.root / 'definitions/base/instructions.md'
+        definition.write_text(definition.read_text() + '\nNew local edit after preparation.\n')
+        with self.assertRaisesRegex(OrbeHelmError, 'Bundled sources changed'):
+            activate_candidate(self.root, candidate, python, {**previous, 'complete': False}, previous)
+        self.assertIn('New local edit', definition.read_text())
+        self.assertEqual((self.root / 'bin/oh').read_text(), 'previous launcher')
+        self.assertEqual(json.loads((self.root / 'installation.json').read_text()), previous)
+
+    def test_activation_failure_restores_previous_files_and_manifest(self):
+        from orbehelm.installer import activate_candidate
+        candidate, python, previous = self.activation_fixture()
+        before = {str(p.relative_to(self.root)): p.read_bytes()
+                  for p in self.root.rglob('*') if p.is_file() and 'state' not in p.relative_to(self.root).parts}
+        rename = Path.rename
+        def fail_readme(path, target):
+            if path == candidate / 'README.md':
+                raise OSError('injected activation failure')
+            return rename(path, target)
+        with patch.object(Path, 'rename', fail_readme):
+            with self.assertRaisesRegex(OSError, 'injected'):
+                activate_candidate(self.root, candidate, python, {**previous, 'complete': False}, previous)
+        after = {str(p.relative_to(self.root)): p.read_bytes()
+                 for p in self.root.rglob('*') if p.is_file() and 'state' not in p.relative_to(self.root).parts}
+        self.assertEqual(before, after)
+        self.assertEqual(json.loads((candidate.parent / 'activation.json').read_text())['phase'], 'rolled-back')
+
+    def test_migration_failure_retains_recovery_and_blocks_launch(self):
+        from orbehelm.installer import activate_candidate
+        candidate, python, previous = self.activation_fixture()
+        with patch('orbehelm.installer.subprocess.run', side_effect=subprocess.CalledProcessError(1, ['migrate'])), \
+                contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(subprocess.CalledProcessError):
+                activate_candidate(self.root, candidate, python, {**previous, 'complete': False}, previous)
+        metadata = json.loads((self.root / 'installation.json').read_text())
+        self.assertFalse(metadata['complete'])
+        self.assertEqual((Path(metadata['recovery_directory']) / 'src/old.py').read_text(), 'previous code')
+        with self.assertRaisesRegex(OrbeHelmError, 'incomplete'):
+            require_server(self.root)
 
     def test_setup_rejects_missing_python_and_unmanaged_destination(self):
         failed = subprocess.run([str(REPO / 'setup.sh')], env={**os.environ, 'ORBEHELM_PYTHON': '/missing/python'},

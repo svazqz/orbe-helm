@@ -1,0 +1,31 @@
+name: Dependency review
+on:
+  schedule:
+    - cron: '21 8 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r requirements-dev.lock
+      - run: python scripts/dev.py audit
+      - name: Resolve optional model dependencies for this platform
+        run: |
+          mkdir -p state/verification/dependencies
+          python -m piptools compile --generate-hashes --no-emit-index-url --no-emit-trusted-host \
+            --output-file state/verification/dependencies/memory.lock requirements-memory.in
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependencies-${{ runner.os }}-${{ github.sha }}
+          path: state/verification/
+          if-no-files-found: warn

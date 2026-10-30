@@ -65,3 +65,20 @@ class SnapshotTests(unittest.TestCase):
         result['project_id'] = '../../outside'
         with self.assertRaises(OrbeHelmError):
             build_directory(self.root, result)
+
+    def test_interpreter_caches_do_not_change_source_identity(self):
+        source = self.root / 'module.py'
+        source.write_text('value = 1\n')
+        files = {}
+        capture_file(self.root, 'module.py', files)
+        original = save_snapshot(self.root, files)
+        cache = self.root / '__pycache__/module.cpython-313.pyc'
+        cache.parent.mkdir()
+        cache.write_bytes(b'compiled runtime data')
+        capture_file(self.root, str(cache.relative_to(self.root)), files)
+        self.assertEqual(set(files), {'module.py'})
+        self.assertEqual(save_snapshot(self.root, files), original)
+        alias = self.root / 'alias.pyc'
+        alias.symlink_to(source)
+        with self.assertRaises(OrbeHelmError):
+            capture_file(self.root, 'alias.pyc', files)

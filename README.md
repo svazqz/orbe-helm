@@ -3,7 +3,7 @@
 Current workflow: [persistent workstreams, isolated role/spec contexts, typed knowledge,
 full-access execution and parallel review/QA](docs/persistent-workflows.md).
 
-Current alpha release: **orbehelm-alpha** (`0.1.0a1`). See the
+Current alpha release: **v0.1.0-alpha.2** (`0.1.0a2`). See the
 [changelog](CHANGELOG.md) and [release/tag policy](docs/releases.md).
 
 OrbeHelm composes reusable agent definitions and manages project configuration,
@@ -243,3 +243,15 @@ Project definitions, tasks, conversation events, and typed knowledge are retaine
 Use `oh projects list` and `oh orbes list` to find IDs. Global scope covers only the
 installation selected by `--root`; it does not affect independent installations.
 Older active launchers require `lsof` to verify ownership before receiving signals.
+
+
+## Contributing and releasing
+
+See [development workflow](docs/development.md) for bootstrap, focused changes,
+verification and independent review; [release process](docs/releases.md) covers exact
+versions, retained artifacts and draft publication. Start with:
+
+```sh
+python3 scripts/dev.py bootstrap
+.venv/bin/python scripts/dev.py check
+```

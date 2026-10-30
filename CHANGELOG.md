@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Stage and validate a separate application environment before update activation;
+  retain prior code/launcher and record recovery state for failed activation/migration.
+- Add contributor checks, incremental lint/type gates, a branch-coverage floor,
+  release metadata checks, retained artifacts and draft-release automation.
+- Isolate operator-memory test environments and retain agent maintenance restrictions.
+- Exclude interpreter caches from source snapshots; include the checkout launcher in
+  source archives and validate every generated dependency entry has SHA256 hashes.
+- Reject update activation if bundled definitions changed during preparation.
+- Update current memory, dependency, development and release guidance; add an isolated
+  keyword-memory capacity benchmark. No schema migration is required.
+
 ## 0.1.0a2 — 2026-10-30
 
 - Add `oh close [ORBE_ID]`, `oh close --all`, and `oh close --global`. Bare

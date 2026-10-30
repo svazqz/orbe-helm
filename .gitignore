@@ -6,3 +6,5 @@ generated/
 state/
 .playwright-mcp/
 .DS_Store
+build/
+dist/

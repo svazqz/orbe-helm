@@ -1,0 +1,30 @@
+name: Optional local model integration
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  memory:
+    environment: optional-integrations
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r requirements-dev.lock -r requirements-memory.lock
+      - name: Explicitly download public test model
+        run: python tests/check_embedding_model.py --download
+      - name: Exercise local inference and isolated CLI/MCP
+        run: python scripts/dev.py memory
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: memory-${{ runner.os }}-${{ github.sha }}
+          path: |
+            state/verification/knowledge-memory/real-model/settings.json
+            state/verification/development/
+          if-no-files-found: warn

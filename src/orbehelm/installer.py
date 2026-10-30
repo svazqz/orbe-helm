@@ -1,5 +1,6 @@
 """Install an application copy, private runtime storage, and an idempotent PATH block."""
 import argparse
+import fcntl
 import hashlib
 import importlib.util
 import json
@@ -161,11 +162,160 @@ def copy_application(source, root, previous=None):
             shutil.rmtree(package)
         staged.rename(package)
     bundled = sync_bundled_sources(source, root, previous)
-    for name in ('README.md', 'CHANGELOG.md', 'requirements.lock', 'requirements-core.lock', 'requirements-memory.lock'):
+    for name in ('README.md', 'CHANGELOG.md', 'requirements.lock', 'requirements-core.lock', 'requirements-runtime.lock', 'requirements-memory.lock'):
         shutil.copy2(source / name, root / name)
     if (source / 'docs').is_dir():
         shutil.copytree(source / 'docs', root / 'docs', dirs_exist_ok=True)
     return bundled
+
+
+def bundled_state(root):
+    """Fingerprint editable installed inputs without treating Finder/caches as source."""
+    files = {}
+    for name in BUNDLED_DIRECTORIES:
+        directory = root / name
+        for path in (directory, *directory.rglob('*')):
+            if path.is_symlink():
+                raise OrbeHelmError('Installed bundled sources must not contain symlinks')
+            if path.is_file() and path.name != '.DS_Store' and '__pycache__' not in path.parts:
+                files[path.relative_to(root).as_posix()] = bundled_digest(path)
+    return files
+
+
+def prepare_candidate(source, root, previous, data, offline):
+    """Leave the active source, environment and manifest untouched during preparation."""
+    releases = root / 'state/installations'
+    if releases.is_symlink():
+        raise OrbeHelmError('Installation staging directory must not be a symlink')
+    releases.mkdir(exist_ok=True, mode=0o700)
+    release = releases / uuid.uuid4().hex
+    release.mkdir(mode=0o700)
+    candidate = release / 'candidate'
+    candidate.mkdir()
+    prepared_state = bundled_state(root)
+    # Merge into a private copy so local customizations are preserved before activation.
+    for name in BUNDLED_DIRECTORIES:
+        installed = root / name
+        if installed.exists():
+            if any(path.is_symlink() for path in (installed, *installed.rglob('*'))):
+                raise OrbeHelmError('Installed bundled sources must not contain symlinks')
+            shutil.copytree(installed, candidate / name)
+    if bundled_state(root) != prepared_state:
+        raise OrbeHelmError('Bundled sources changed during preparation; retry the update')
+    (release / 'source-state.json').write_text(json.dumps(prepared_state))
+    data['bundled_sources'] = copy_application(source, candidate, previous)
+    environment = release / 'venv'
+    python = environment / 'bin/python3'
+    try:
+        subprocess.run([sys.executable, '-m', 'venv', str(environment)], check=True)
+        dependencies = [str(python), '-m', 'pip', 'install', '--disable-pip-version-check',
+                        '-r', str(candidate / ('requirements-memory.lock' if data['memory_extra'] else 'requirements-runtime.lock'))]
+        if offline:
+            dependencies.append('--no-index')
+        subprocess.run(dependencies, check=True)
+        subprocess.run([str(python), '-m', 'pip', 'check'], check=True)
+        imports = ('import fastapi, sqlalchemy, alembic, jinja2, uvicorn; '
+                   + ('import fastembed; ' if data['memory_extra'] else '')
+                   + 'from orbehelm import __version__; '
+                   + 'from orbehelm.cli import parser; '
+                   + 'assert __version__ == ' + repr(data['version']) + '; parser()')
+        subprocess.run([str(python), '-c', 'import sys; sys.path.insert(0, '
+                        + repr(str(candidate / 'src')) + '); ' + imports], check=True)
+        subprocess.run([str(python), str(candidate / 'src/orbehelm/_entry.py'), '--version'], check=True)
+    except (OSError, subprocess.CalledProcessError):
+        # Nothing active references a failed candidate. Keep successful releases only.
+        shutil.rmtree(release)
+        raise
+    return candidate, python
+
+
+def activate_candidate(root, candidate, python, data, previous):
+    """Journal file activation; never imply an automatic database downgrade is safe."""
+    backup = candidate.parent / 'previous'
+    backup.mkdir(mode=0o700)
+    names = ['src', *BUNDLED_DIRECTORIES, 'docs', 'README.md', 'CHANGELOG.md',
+             'requirements.lock', 'requirements-core.lock', 'requirements-runtime.lock', 'requirements-memory.lock',
+             'bin/oh', INSTALLATION_FILE]
+    for name in names:
+        if (root / name).is_symlink():
+            raise OrbeHelmError('Activation target must not be a symlink: ' + name)
+    migration_started = False
+    moved, activated = [], []
+    lock = root / 'state/install.lock'
+    if lock.is_symlink():
+        raise OrbeHelmError('Installation lock must not be a symlink')
+    with lock.open('a') as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        if installation(root) != previous:
+            raise OrbeHelmError('Installation changed during preparation; retry the update')
+        prepared_state = json.loads((candidate.parent / 'source-state.json').read_text())
+        if bundled_state(root) != prepared_state:
+            raise OrbeHelmError('Bundled sources changed during preparation; retry the update')
+        journal = candidate.parent / 'activation.json'
+        def record(phase):
+            journal.write_text(json.dumps({'phase': phase, 'moved': moved, 'activated': activated,
+                                          'root': str(root), 'backup': str(backup)}, indent=2) + '\n')
+            journal.chmod(0o600)
+        try:
+            record('activating')
+            # The incomplete marker prevents launches during the multi-file switch.
+            if (root / INSTALLATION_FILE).exists():
+                shutil.copy2(root / INSTALLATION_FILE, backup / INSTALLATION_FILE)
+            write_manifest(root, {**data, 'recovery_directory': str(backup)})
+            for name in names:
+                if name == INSTALLATION_FILE:
+                    continue
+                target = root / name
+                old = backup / name
+                if target.exists():
+                    old.parent.mkdir(parents=True, exist_ok=True)
+                    target.rename(old)
+                    moved.append(name)
+                    record('activating')
+                if (candidate / name).exists():
+                    (candidate / name).rename(target)
+                    activated.append(name)
+                    record('activating')
+            launcher = root / 'bin/oh'
+            launcher.write_text('#!/bin/sh\nset -eu\n' +
+                'export ORBEHELM_ROOT=' + shlex.quote(str(root)) + '\n' +
+                'exec ' + shlex.quote(str(python)) + ' ' +
+                shlex.quote(str(root / 'src/orbehelm/_entry.py')) + ' "$@"\n')
+            launcher.chmod(0o755)
+            activated.append('bin/oh')
+            empty_config = root / 'state/setup.ini'
+            empty_config.write_text('[ORBEHELM]\n')
+            record('migrating')
+            migration_started = True
+            subprocess.run([str(launcher), 'migrate', '--config', str(empty_config)], check=True)
+            data['complete'] = True
+            data['environment'] = str(python.parent.parent)
+            data['recovery_directory'] = str(backup)
+            write_manifest(root, data)
+            record('complete')
+        except (OSError, subprocess.CalledProcessError, OrbeHelmError):
+            if migration_started:
+                # Migrations create a DB backup. Old code must not run on a changed schema.
+                write_manifest(root, {**data, 'complete': False, 'recovery_directory': str(backup)})
+                record('migration-failed')
+                print(f'Update incomplete; retained code/environment: {backup}. '
+                      'Rerun update or restore a compatible database and application backup; '
+                      'see docs/installation.md.', file=sys.stderr)
+            else:
+                for name in reversed(activated):
+                    target = root / name
+                    if target.is_dir():
+                        shutil.rmtree(target)
+                    else:
+                        target.unlink(missing_ok=True)
+                for name in reversed(moved):
+                    (backup / name).rename(root / name)
+                if previous is None:
+                    (root / INSTALLATION_FILE).unlink(missing_ok=True)
+                else:
+                    write_manifest(root, previous)
+                record('rolled-back')
+            raise
 
 
 def install(args):
@@ -218,42 +368,11 @@ def install(args):
             'server_url': f'http://127.0.0.1:{port}', 'complete': False,
             'version': __version__, 'bundled_sources': (previous or {}).get('bundled_sources', {})}
     data['memory_extra'] = args.memory or (previous or {}).get('memory_extra', False)
-    write_manifest(root, data)
-    data['bundled_sources'] = copy_application(source, root, previous)
-    # Save the new baseline before migrations so an interrupted install is retryable.
-    write_manifest(root, data)
-    environment = root / '.venv'
-    if environment.is_symlink():
+    if (root / '.venv').is_symlink():
         raise OrbeHelmError('The application virtual environment must not be a symlink')
-    python = environment / 'bin/python3'
-    if not python.exists():
-        try:
-            subprocess.run([sys.executable, '-m', 'venv', str(environment)], check=True)
-        except subprocess.CalledProcessError as error:
-            raise OrbeHelmError('Could not create the virtual environment. Install python3-venv '
-                                'or a complete Python distribution and rerun setup.sh.') from error
-    subprocess.run([str(python), '-c', 'import sys; assert sys.version_info >= (3, 11); import pip'], check=True)
-    dependencies = [str(python), '-m', 'pip', 'install', '--disable-pip-version-check',
-                                '-r', str(root / ('requirements-memory.lock' if data['memory_extra'] else 'requirements.lock'))]
-    if args.offline:
-        dependencies.append('--no-index')
-    subprocess.run(dependencies, check=True)
-    subprocess.run([str(python), '-c', 'import fastapi, sqlalchemy, alembic, jinja2, uvicorn'], check=True)
-    (root / 'bin').mkdir(exist_ok=True)
+    candidate, python = prepare_candidate(source, root, previous, data, args.offline)
     launcher = root / 'bin/oh'
-    if launcher.is_symlink():
-        raise OrbeHelmError('The installed launcher must not be a symlink')
-    launcher.write_text('#!/bin/sh\nset -eu\n' +
-        'export ORBEHELM_ROOT=' + shlex.quote(str(root)) + '\n' +
-        'exec ' + shlex.quote(str(python)) + ' ' +
-        shlex.quote(str(root / 'src/orbehelm/_entry.py')) + ' "$@"\n')
-    launcher.chmod(0o755)
-    # Import defaults only from this installation during setup, never a personal rc file.
-    empty_config = root / 'state/setup.ini'
-    empty_config.write_text('[ORBEHELM]\n')
-    subprocess.run([str(launcher), 'migrate', '--config', str(empty_config)], check=True)
-    data['complete'] = True
-    write_manifest(root, data)
+    activate_candidate(root, candidate, python, data, previous)
     shell = args.shell or os.environ.get('SHELL') or '/bin/sh'
     paths = [] if args.no_path or args.update else startup_files(home, shell)
     block = path_block(root / 'bin', shell)

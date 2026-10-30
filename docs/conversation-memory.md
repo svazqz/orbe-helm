@@ -61,6 +61,12 @@ CLI versions and authenticated provider behavior still require live integration 
 
 ## Refreshing rules and switching agents
 
+Native interactive launches (`oh` / `oh run`) attach conversation handoffs through
+runtime instruction configuration, rather than submitting history as a user prompt.
+A launch without `--prompt` waits for user input instead of automatically continuing
+prior work. Profile/spec instructions and captured historical context remain available.
+Native CLI headers and account usage notices are controlled by the host CLI.
+
 Before every managed turn, the service publishes valid working definition changes,
 resolves the current effective project sources, and computes a policy digest from
 composed instructions, selected skill tree hashes, MCP configuration, and explicit

@@ -1,96 +1,53 @@
-# OrbeHelm releases
+# Release process
 
-## Current release
+Current package version: `0.1.0a2`; release tag: `v0.1.0-alpha.2`; schema head: `0006`.
+The permanent first-release tag `orbehelm-alpha` identifies `0.1.0a1` and must never move.
 
-Version `0.1.0a2`, tag `v0.1.0-alpha.2`, adds close/prune lifecycle commands.
-Database head remains `0006`; no additional migration is required.
+## Prepare a candidate
 
-## First release identity
+1. Resolve the Unreleased changelog into a dated version entry. Update pyproject.toml,
+   `src/orbehelm/__init__.py` and README together. Do not bump schema for code-only changes.
+2. Review the exact source scope and commit. Run `.venv/bin/python scripts/dev.py release`;
+   this verifies tests/quality/coverage and prepares wheel, source archive and checksums.
+3. Run `scripts/check_release.py --clean --tag=VERSION_TAG` with the project Python.
+   Version tags are `v1.2.3`, `v1.2.3-alpha.1`, `v1.2.3-beta.1` or `v1.2.3-rc.1`.
+4. Require reviewer and QA approvals on that same candidate plus passing CI. Record
+   installation/upgrade and relevant optional provider/model evidence separately.
+5. Create/push an annotated tag only after operator authorization to publish the
+   reviewed commit. Never move an existing published tag.
 
-| Field | Value |
-| --- | --- |
-| Release name | `orbehelm-alpha` |
-| Immutable Git tag | `orbehelm-alpha` |
-| Python package/runtime version | `0.1.0a1` |
-| Database migration head | `0006` |
-| GitHub release type | Prerelease |
-| Release scope | Local release snapshot; GitHub publication is separate |
+The tag workflow verifies that same revision through the Linux/macOS test matrix,
+checks tag/version agreement, builds source/wheel artifacts and SHA256SUMS, retains
+artifacts, and creates a **draft** GitHub release. Configure the repository `release`
+environment with required reviewers for an additional operator gate. A draft is not a
+published release; inspect its notes/artifacts and publish deliberately. The workflow
+needs contents-write permission only for its draft job. It does not publish to PyPI.
+Remote workflow execution and repository environment settings require operator setup;
+local checks do not establish their success.
 
-The release name is the product label requested for this version. The numeric
-version remains valid Python package metadata in `pyproject.toml` and
-`src/orbehelm/__init__.py`. `oh --version` reports that numeric version.
+The GitHub source checkout/tag remains the installer distribution. The source archive
+also includes setup/update, definitions and guides. The wheel verifies package imports;
+installing it alone is not a replacement for setup's source/runtime layout.
 
-Tags identify committed snapshots, not the current working directory. Include the
-reviewed application source, definitions, tests and documentation in the release
-commit before tagging it. Uncommitted changes are never included automatically.
+## Installation and recovery checks
 
-## Version and tag policy
+Use a clean checkout of the exact reviewed tag and isolated verification homes under
+this checkout. Exercise fresh setup, update from the previous release, customized
+sources, retained history and failure recovery. Do not run update on the active
+installation as a test. Run provider/model integrations explicitly when affected;
+fake-provider contracts do not certify authentication, CLI trust or permissions.
 
-- Never move or overwrite a published tag. `orbehelm-alpha` identifies the first
-  alpha snapshot permanently; it is not a rolling “latest alpha” pointer.
-- Subsequent alpha versions increment the package version (`0.1.0a2`, `0.1.0a3`,
-  and so on) and receive distinct tags, for example `v0.1.0-alpha.2`.
-- Beta and release candidates use the corresponding Python prerelease versions
-  and distinct tags. Stable versions use tags such as `v0.1.0`.
-- Keep package metadata and `__version__` synchronized. Database revisions advance
-  independently: several application releases may use the same schema.
-- Record changes, migration requirements and material limitations in `CHANGELOG.md`.
+Setup/update reads the source checkout, including uncommitted/untracked package files;
+it does not fetch or select the latest GitHub release. Retain the original install-dir.
+Finish active sessions and stop the optional editor before changing installed code.
+Application/environment recovery and database restoration have distinct compatibility
+requirements; see [installation](installation.md). Never downgrade by moving a tag or
+blindly running old code on a newer schema.
 
-## Prepare and publish
+## Version history
 
-1. Review and stage the intended source, authoritative definitions, dependency
-   files, documentation, CI workflow and tests. Keep runtime state, model caches,
-   credentials and generated builds out of the commit.
-2. Run the project checks in its virtual environment, including the full regression
-   suite, isolated kernel, installer tests and shell syntax checks. Build/package
-   checks remain useful before distribution. Review any unmet optional integrations.
-3. Commit the reviewed release candidate and verify that the release tree is clean.
-   Record its exact commit SHA. A Git tag cannot contain uncommitted changes.
-4. Create an annotated tag on that reviewed commit, push the commit/tag and create
-   a GitHub **prerelease** named `orbehelm-alpha`, using the changelog as release notes.
-   These are explicit publication actions; preparing these files does not perform them.
-5. Test installation/update from that exact tag in an isolated verification home.
-   Record separately any authenticated model/MCP integration checks.
+- `orbehelm-alpha`: package `0.1.0a1`, first immutable named alpha snapshot.
+- `v0.1.0-alpha.2`: package `0.1.0a2`, close/prune lifecycle commands, schema `0006`.
 
-Once the release commit is reviewed, the publication commands are:
-
-```sh
-git tag -a orbehelm-alpha REVIEWED_COMMIT_SHA -m 'OrbeHelm alpha 0.1.0a1'
-git push origin orbehelm-alpha
-gh release create orbehelm-alpha --prerelease --verify-tag \
-  --title orbehelm-alpha --notes-file RELEASE_NOTES_FILE
-```
-
-Push the reviewed commit to its intended branch as part of the release process.
-The uppercase arguments above must be replaced with the approved commit and prepared
-release-notes path; do not execute them verbatim. Never force-push an existing tag.
-
-## What setup and update install
-
-`setup.sh` invokes the installer in the source checkout. `update.sh` invokes that
-same script with `--update`. Neither fetches GitHub nor selects the newest tag.
-
-- From this working tree, update includes current local changes, including untracked
-  files under `src/orbehelm`; those files do not need a commit for local installation.
-- From a checked-out tag, update installs that tag's implementation, provided the
-  checkout has no extra local changes.
-- Application source is replaced, dependencies are refreshed and migrations run.
-  Database history, native homes and locally customized definitions are retained.
-- Preserved local definition edits can differ from the bundled release. The installer
-  prints those paths for review rather than overwriting them silently.
-- Use the original `--install-dir` for a custom installation. Finish active sessions
-  and stop the optional editor before changing installed code.
-- `./update.sh --memory` installs the optional FastEmbed runtime. It does not download
-  weights; `oh memory configure --download-model` is a separate explicit action.
-
-When the first tag exists, install/update its exact snapshot from a clean clone with:
-
-```sh
-git fetch origin --tags
-git switch --detach orbehelm-alpha
-./update.sh --memory
-```
-
-Use `./setup.sh --memory` instead for a fresh installation. A database downgrade is
-not supported by checking out an older tag; restore a compatible backup into a
-separate installation if rollback is required.
+See [development](development.md) for contributor checks, dependency maintenance and
+live-provider evidence; [changelog](../CHANGELOG.md) records release behavior.

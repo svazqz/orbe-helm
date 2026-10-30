@@ -24,6 +24,10 @@ def outcome(content, source_id):
 
 class ChatKnowledgeTests(unittest.TestCase):
     def setUp(self):
+        # This fixture models an operator, independently of the launching agent.
+        environment = patch.dict(os.environ, {'ORBEHELM_MEMORY_BINDING': ''})
+        environment.start()
+        self.addCleanup(environment.stop)
         self.fixture = fixtures.LocalMemoryTests()
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
@@ -31,6 +35,13 @@ class ChatKnowledgeTests(unittest.TestCase):
         self.thread = conversation(self.f.store, self.f.project.id, 'developer')
         self.repo = repository(self.f.store)
         self.repo.ensure_owner(self.thread, self.f.project.id)
+
+    def test_agent_binding_cannot_run_operator_maintenance(self):
+        # A synthetic binding is sufficient: maintenance must fail before reading it.
+        with patch.dict(os.environ, {'ORBEHELM_MEMORY_BINDING': '/fixture/not-a-live-binding'}), \
+                contextlib.redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(main(['memory', 'status', '--root', str(self.f.root)]), 2)
+        self.assertIn('Operator memory maintenance', error.getvalue())
 
     def test_completed_chat_creates_reported_units_and_switch_retains_owner(self):
         first, _, _ = self.f.turn(self.thread, 'claude', 'Record a decision', outcome=outcome('Recorded answer', 'decision-1'))

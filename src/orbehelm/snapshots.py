@@ -23,6 +23,9 @@ def capture_file(root, relative, result):
             raise OrbeHelmError(f"Snapshot symlinks are not supported: {relative}")
     if path.is_symlink():
         raise OrbeHelmError(f"Snapshot symlinks are not supported: {relative}")
+    # Interpreter caches are reproducible runtime output, never candidate source.
+    if '__pycache__' in parts or path.suffix in {'.pyc', '.pyo'}:
+        return
     try:
         data = path.read_bytes()
     except OSError as error:

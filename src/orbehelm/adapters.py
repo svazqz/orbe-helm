@@ -393,10 +393,10 @@ def launch(root, output, resolved, agent, prompt=None, dry_run=False, strict=Fal
                         pass
                     if coverage['errors'] and fresh_policy:
                         raise OrbeHelmError('Policy refresh stopped because native transcript capture is incomplete; inspect conversations history before continuing with managed chat.')
-                prompt = ('<!-- orbehelm:handoff:v1 -->\n' + bootstrap(memory_store, thread, memory_epoch=knowledge_epoch,
-                    memory_visibility=memory_context.get('visibility'))
-                          + '\n<!-- /orbehelm:handoff -->\n'
-                          + (prompt or 'Continue the recorded work, or ask the user what to do next.'))
+                from .handoff_runtime import prepare as prepare_handoff
+                output = prepare_handoff(output, agent, runtime,
+                    bootstrap(memory_store, thread, memory_epoch=knowledge_epoch,
+                              memory_visibility=memory_context.get('visibility')))
         env.update(launch_environment(root, output, agent, runtime))
         context_identity = {}
         if resolved.get('project_id'):

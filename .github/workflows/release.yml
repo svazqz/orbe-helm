@@ -1,0 +1,46 @@
+name: Prepare release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    uses: ./.github/workflows/verify.yml
+  draft:
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r requirements-dev.lock
+      - name: Verify exact release revision and tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python scripts/check_release.py --clean --tag "$RELEASE_TAG"
+      - run: python scripts/dev.py package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.sha }}
+          path: state/verification/development/wheels/*
+          if-no-files-found: error
+      - name: Create a draft for operator review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python scripts/release_notes.py > state/verification/development/release-notes.md
+          case "$RELEASE_TAG" in
+            *-*) set -- --prerelease ;;
+            *) set -- ;;
+          esac
+          gh release create "$RELEASE_TAG" state/verification/development/wheels/* \
+            "$@" --draft --verify-tag --title "$RELEASE_TAG" \
+            --notes-file state/verification/development/release-notes.md
