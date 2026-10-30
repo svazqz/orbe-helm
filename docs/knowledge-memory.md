@@ -25,6 +25,10 @@ terminal for maintenance. Do not remove a binding to bypass this boundary.
 
 ## Enable semantic retrieval
 
+Release 0.1.0a3: use Python 3.13 for the optional embedding runtime. The shipped
+optional lock cannot resolve on Python 3.11 because of its NumPy 2.5.4 pin. This
+does not prevent keyword-only memory without the optional extra.
+
 Finish active OrbeHelm sessions and stop the optional editor before updating. Select
 the reviewed checkout/tag you intend to install; update includes local source changes.
 From a normal operator terminal, outside an agent session:

@@ -1,7 +1,11 @@
 # Release process
 
-Current package version: `0.1.0a2`; release tag: `v0.1.0-alpha.2`; schema head: `0006`.
+Current package version: `0.1.0a3`; release tag: `v0.1.0-alpha.3`; schema head: `0006`.
 The permanent first-release tag `orbehelm-alpha` identifies `0.1.0a1` and must never move.
+
+Optional local embeddings currently require Python 3.13 with the shipped lock;
+Python 3.11 resolution fails at NumPy 2.5.4. This alpha documents that known limitation
+rather than including the unreviewed compatibility draft.
 
 ## Prepare a candidate
 
@@ -47,6 +51,7 @@ blindly running old code on a newer schema.
 ## Version history
 
 - `orbehelm-alpha`: package `0.1.0a1`, first immutable named alpha snapshot.
+- `v0.1.0-alpha.3`: package `0.1.0a3`, staged updates and development/release gates, schema `0006`.
 - `v0.1.0-alpha.2`: package `0.1.0a2`, close/prune lifecycle commands, schema `0006`.
 
 See [development](development.md) for contributor checks, dependency maintenance and

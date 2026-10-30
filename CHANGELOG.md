@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0a3 — 2026-10-30
 
 - Stage and validate a separate application environment before update activation;
   retain prior code/launcher and record recovery state for failed activation/migration.
@@ -12,6 +12,19 @@
 - Reject update activation if bundled definitions changed during preparation.
 - Update current memory, dependency, development and release guidance; add an isolated
   keyword-memory capacity benchmark. No schema migration is required.
+
+- Attach native conversation handoffs through runtime instructions; a launch without
+  an explicit prompt waits for user input instead of automatically continuing history.
+- Include SQLAlchemy's platform-dependent greenlet dependency in hash-checked
+  installer/development resolutions so Linux installations remain reproducible.
+- Database head remains `0006`; no schema migration is required for this release.
+
+### Known limitation
+
+The optional-memory lock does not resolve on Python 3.11 because it pins NumPy 2.5.4.
+Use Python 3.13 for the optional `--memory` installation. Keyword-only memory and the
+base development lock remain available without the optional model runtime. The
+compatibility follow-up is not included in this release.
 
 ## 0.1.0a2 — 2026-10-30
 
