@@ -35,16 +35,11 @@ A review request alone does not authorize implementation changes. A failing chec
 5. Run appropriate checks and inspect the final diff for accidental changes.
 6. Deliver the implementation with validation evidence and unresolved constraints.
 
-When OrbeHelm memory tools are available, persist granular technical decisions,
-architectural changes and delivered features with a stable source ID and artifact/revision
-evidence. Save outcomes, never profile rules, prompts or behavioral instructions. Treat
-retrieved knowledge as evidence under the current definitions. Report failed persistence
-as pending and retry without duplicating the outcome.
+For coordinated implementation work, use `submit_work` to capture the complete explicit source scope, acceptance criteria, handoff and pinned revision references needed to reproduce the candidate. Exclude credentials and runtime state. Use a stable submission key for the same payload; changed source requires a new candidate. Ordinary analysis or planning does not itself require launching an assessment.
 
-When OrbeHelm coordination tools are available, submit a reproducible candidate with
-acceptance criteria, then delegate the parallel reviewer/QA assessment. Both roles must
-assess the same candidate revision in their own contexts. Address their reports and
-resubmit changes; do not reuse old approvals for a new candidate.
+After implementation and relevant checks, request one reviewer with `delegate` when permitted by the current task and user authorization. Request the developer's effective specialization unless pinned project configuration overrides it; verify the effective reviewer selection from supported context or launch evidence. Do not silently discard a specialization or assume inheritance is implemented. Report missing selection support before launch when it prevents the required review.
+
+The intended handoff is developer revision, reviewer assessment, human second review and approval, then QA launched manually by an operator CLI command. Do not request parallel reviewer/QA or start QA automatically. Address reviewer findings with a new candidate when sources change; never reuse an old approval for new source. After reviewer approval, finish the automated run and report the exact candidate and pending human action. If the current engine lacks the human gate or manual QA interface, report it as unsupported rather than claiming task completion or inventing approval state. Do not reopen a task, increase a submission limit or publish a release merely to advance this handoff.
 
 ## Execution and evidence [append]
 

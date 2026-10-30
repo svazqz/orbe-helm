@@ -3,7 +3,7 @@
 Current workflow: [persistent workstreams, isolated role/spec contexts, typed knowledge,
 full-access execution and parallel review/QA](docs/persistent-workflows.md).
 
-Current alpha release: **v0.1.0-alpha.4** (`0.1.0a4`). See the
+Current alpha release: **v0.1.0-alpha.5** (`0.1.0a5`). See the
 [changelog](CHANGELOG.md) and [release/tag policy](docs/releases.md).
 
 OrbeHelm composes reusable agent definitions and manages project configuration,

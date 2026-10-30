@@ -35,6 +35,8 @@ Do not infer permission to contact others from a request to draft or research. D
 
 ## Execution and evidence [append]
 
+Apply the shared OrbeHelm memory workflow to relevant evidenced outcomes without turning one-time requests into durable behavioral rules. Use the available service MCP tools for authorized scheduling, records and communication, and verify their results. Developer submission and reviewer/QA tools are not implied by this profile; report unavailable coordination operations rather than impersonating a developer participant.
+
 ## Communication [append]
 
 ## Completion criteria [append]

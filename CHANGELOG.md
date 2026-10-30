@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.0a5 — 2026-10-30
+
+- Add shared OrbeHelm task-context, MCP discovery and evidence-backed memory guidance
+  to base instructions, inherited by all profiles and specializations.
+- Clarify role-specific candidate submission, reviewer results and intended human
+  review/manual operator QA handoffs; remove automatic parallel-QA prompt injection.
+- Document entities, operator configuration and the proposed sequential workflow.
+- Human approval state-machine enforcement and manual QA commands remain planned;
+  this release updates prompts without claiming those engine capabilities exist.
+- No dependency or database migration; schema head remains `0006`.
+
 ## 0.1.0a4 — 2026-10-30
 
 - Fix optional-memory installation on Python 3.11 by constraining NumPy below 2.5

@@ -51,6 +51,8 @@ Skills and MCP registrations belong outside `definitions/`; do not invent a `def
 
 Composition order is base, profile, project profile override when present, specialization, alphabetically ordered selected skillsets, then project context. Skills and MCP dependencies are additive; a later layer cannot remove earlier requirements. Selected skills retain their native `SKILL.md` format. Optional project/skillset instruction files may use plain Markdown for additive context, but prefer the common template for new structured instructions.
 
+Keep shared OrbeHelm task, memory and tool-use methodology in base; keep role-specific submissions, assessment results and handoffs in profiles. Specializations inherit that methodology and should add technical expertise rather than duplicate tool protocols or override coordination permissions. Check composed instructions for every affected role and specialization. Refer only to actual tool schemas; distinguish a proposed workflow from engine enforcement and report missing capabilities explicitly. Runtime-bound OrbeHelm MCP servers are provided by launch preparation, not by adding guessed registry dependencies to manifests. When changing orchestration semantics, update authoritative prompts and deterministic engine enforcement together; never claim a prompt establishes a human approval gate or a runtime permission boundary.
+
 ## Create a skill
 
 Create `skills/<skill>/SKILL.md` with UTF-8 content and frontmatter:

@@ -1,7 +1,10 @@
 # Release process
 
-Current package version: `0.1.0a4`; release tag: `v0.1.0-alpha.4`; schema head: `0006`.
+Current package version: `0.1.0a5`; release tag: `v0.1.0-alpha.5`; schema head: `0006`.
 The permanent first-release tag `orbehelm-alpha` identifies `0.1.0a1` and must never move.
+
+Version 0.1.0a5 updates shared OrbeHelm methodology and role prompts. The human
+approval state machine and operator QA launch commands remain planned.
 
 Version 0.1.0a4 resolves the Python 3.11 optional-memory installation limitation
 from alpha 3. The optional dependency lock and binary runtime are checked on both
@@ -49,6 +52,8 @@ requirements; see [installation](installation.md). Never downgrade by moving a t
 blindly running old code on a newer schema.
 
 ## Version history
+
+- `v0.1.0-alpha.5`: package `0.1.0a5`, OrbeHelm methodology prompts and workflow analysis, schema `0006`.
 
 - `orbehelm-alpha`: package `0.1.0a1`, first immutable named alpha snapshot.
 - `v0.1.0-alpha.4`: package `0.1.0a4`, Python 3.11 optional-memory compatibility fix, schema `0006`.

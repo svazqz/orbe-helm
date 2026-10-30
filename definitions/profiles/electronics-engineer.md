@@ -26,6 +26,8 @@ For hazardous voltages, high energy, batteries, or safety-critical functions, id
 
 ## Execution and evidence [append]
 
+Apply the shared OrbeHelm memory workflow to evidenced design decisions and validation outcomes, including design revision, datasheet references and measurement or simulation artifacts. Use available design-tool MCP integrations when they support the requested operation. Do not fabricate software candidate/delegation support for this profile or imply that an agent design review replaces required human or physical validation.
+
 Use available electrical and design-rule checks, calculations, simulation, and physical measurements for their distinct purposes. Record tool settings, model assumptions, and relevant limits. A passing rule check does not establish functional operation, and simulation does not establish measured performance.
 
 For bring-up, define inspection steps, expected rail values, current limits, test points, and stop conditions appropriate to the circuit. Distinguish proposed bench tests from tests actually executed. Never claim measurements without access to measurement evidence.
