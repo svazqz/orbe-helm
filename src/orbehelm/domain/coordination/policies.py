@@ -41,41 +41,46 @@ def require_developer(actor_id, profile, parent_id, owner_id):
 
 
 def require_submission(state, rounds, max_rounds, live_delegation):
-    if state not in {'developing', 'blocked'} or rounds >= max_rounds:
-        raise Conflict('Task is not ready for submission or has reached its round limit')
+    # Historical counters remain readable; they no longer constrain task lifetime.
+    if state not in {'developing', 'blocked', 'awaiting_review', 'awaiting_human_approval',
+                     'approved_for_qa', 'reviewed', 'complete'}:
+        raise Conflict('Task is not ready for submission')
     if live_delegation:
         raise Conflict('Resolve the existing delegation before submitting another candidate')
 
 
 def require_delegation(profile, state, candidate_id):
-    if profile not in RESULTS:
-        raise OrbeHelmError('Only reviewer and QA child profiles are supported')
-    if state not in {'awaiting_review', 'reviewing', 'testing', 'reviewed', 'assessing'} or candidate_id is None:
+    if profile != 'reviewer':
+        raise OrbeHelmError('Developers may request reviewer only; QA requires the operator tasks qa command')
+    if state not in {'awaiting_review', 'awaiting_human_approval', 'approved_for_qa',
+                     'reviewed', 'complete', 'developing', 'blocked'} or candidate_id is None:
         raise Conflict(f'{profile} delegation requires an active submitted candidate')
 
 
-def assessment_state(results, pending=False):
-    """Only independent passing gates for the same candidate complete a task."""
+def assessment_state(results, pending=False, human_approved=False):
+    """Review stops at a human gate; QA is a separate operator-requested stage."""
     if pending:
         return 'assessing'
     if any(value == 'blocked' for value in results.values()):
         return 'blocked'
     if any(value in {'changes_requested', 'failed'} for value in results.values()):
         return 'developing'
-    if results.get('reviewer') == 'approved' and results.get('qa') == 'passed':
-        return 'complete'
-    return 'reviewed' if results.get('reviewer') == 'approved' else 'awaiting_review'
+    if results.get('reviewer') == 'approved':
+        if human_approved:
+            return 'complete' if results.get('qa') == 'passed' else 'approved_for_qa'
+        return 'awaiting_human_approval'
+    return 'awaiting_review'
 
 
 def completed_state(result):
-    return {'approved': 'reviewed', 'changes_requested': 'developing',
+    return {'approved': 'awaiting_human_approval', 'changes_requested': 'developing',
             'passed': 'complete', 'failed': 'developing', 'blocked': 'blocked'}[result]
 
 
 def require_reopen(state, rounds, round_limit, pending):
-    if state not in {'blocked', 'complete'}:
-        raise Conflict('Only blocked or completed tasks can be explicitly reopened')
+    if state not in {'blocked', 'complete', 'reviewed', 'awaiting_human_approval', 'approved_for_qa'}:
+        raise Conflict('Only blocked, reviewed or completed tasks can be explicitly reopened')
     if pending:
         raise Conflict('A pending delegation must be resolved first')
-    if round_limit is not None and (type(round_limit) is not int or not rounds < round_limit <= 100):
-        raise OrbeHelmError('Round limit must exceed completed submissions and be at most 100')
+    if round_limit is not None:
+        raise OrbeHelmError('Submission limits are no longer supported; tasks accept unlimited candidates')

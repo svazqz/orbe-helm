@@ -23,7 +23,7 @@ from orbehelm.core import OrbeHelmError, build_directory
 from orbehelm.cli import main
 from orbehelm.adapters import launch, orbe_identity, child_command
 from orbehelm.coordination_runtime import prepare_runtime
-from orbehelm.delegation_runner import execute_delegation, recover_delegation
+from orbehelm.delegation_runner import execute_delegation, execute_operator_qa, recover_delegation
 from orbehelm.mcp_bridge import Bridge
 from orbehelm.product.catalog import reconcile_catalog, Conflict
 from orbehelm.product.database import migrate, Store, engine_for
@@ -31,6 +31,8 @@ from orbehelm.product.models import Task, LogicalOrbe, Delegation, TaskEvent
 from orbehelm.product.projects import register_project, resolve_project, build_project
 from orbehelm.product.coordination import Coordinator, ensure_orbe, accept_knowledge
 from orbehelm.product.web import create_app
+# Bind the real process inspector before tests patch native subprocess launch.
+from orbehelm.infrastructure.process import lifecycle
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -228,26 +230,47 @@ class CoordinationTests(unittest.TestCase):
                          __import__('hashlib').sha256(b'value = 1\n').hexdigest())
         with self.assertRaises(Conflict):
             self.submit()
-        with self.assertRaises(Conflict):
-            self.submit('other-key')
+        self.assertNotEqual(self.submit('other-key')['candidate_id'], first['candidate_id'])
         for source in ['../escape', '.env', '.']:
             (self.work / '.env').write_text('fake fixture data')
             with self.assertRaises(OrbeHelmError):
                 self.coordinator.submit_work([source], 'Handoff', 'unsafe', self.coordinator.context()['version'], 'Requirements')
 
-    def test_workflow_requires_review_before_qa_and_routes_results_to_parent(self):
+    def operator_terminal(self):
+        # Simulated operator boundary for disposable fixture state, never live data.
+        return patch.dict(os.environ, {'ORBEHELM_ORBE_ID': '', 'ORBEHELM_MEMORY_BINDING': ''})
+
+    def approve(self, key='approval'):
+        context = self.coordinator.context()
+        with self.operator_terminal():
+            return self.coordinator.human_decision(context['candidate_id'], 'approved',
+                'fixture-operator', 'Inspected exact candidate', key, context['version'])
+
+    def request_qa(self, key='qa'):
+        context = self.coordinator.context()
+        with self.operator_terminal():
+            return self.coordinator.request_qa(context['candidate_id'], key, 'Run tests', context['version'])
+
+    def test_workflow_stops_for_human_and_manual_qa(self):
         self.submit()
-        # Both gates can be queued against the same candidate before either finishes.
-        queued_qa = self.coordinator.create_delegation('qa', 'qa', 'Run tests', self.coordinator.context()['version'])
+        with self.assertRaises(OrbeHelmError):
+            self.coordinator.create_delegation('qa', 'qa', 'Run tests', self.coordinator.context()['version'])
+        with self.assertRaises(Conflict), self.operator_terminal():
+            self.request_qa()
         review = self.review()
         self.assertEqual(review['status'], 'completed')
-        self.assertEqual(self.coordinator.context()['state'], 'assessing')
-        qa = self.coordinator.create_delegation('qa', 'qa', 'Run tests', self.coordinator.context()['version'])
-        self.assertEqual(qa['id'], queued_qa['id'])
+        self.assertEqual(self.coordinator.context()['state'], 'awaiting_human_approval')
+        self.assertEqual(len(self.coordinator.context()['delegations']), 1)
+        with self.assertRaises(Conflict):
+            self.request_qa()
+        self.approve()
+        self.assertEqual(self.coordinator.context()['state'], 'approved_for_qa')
+        self.assertEqual(len(self.coordinator.context()['delegations']), 1)
+        qa = self.request_qa()
+        self.assertEqual(self.coordinator.context()['state'], 'testing')
         self.coordinator.claim(qa['id'])
         child = Coordinator(self.store, qa['child_id'], qa['id'])
         child.stage_result('passed', 'All acceptance cases passed.', [], [])
-        self.assertEqual(self.coordinator.context()['state'], 'assessing')
         self.coordinator.finish(qa['id'], True)
         self.assertEqual(self.coordinator.context()['state'], 'complete')
         self.assertEqual(qa['parent_id'], self.actor)
@@ -273,14 +296,158 @@ class CoordinationTests(unittest.TestCase):
         with self.assertRaises(OrbeHelmError):
             other.claim(first['id'])
 
-    def test_fix_revision_invalidates_old_approvals_and_respects_round_limit(self):
+    def test_historical_submission_caps_do_not_block_new_candidates(self):
+        with self.store.write() as db:
+            task = db.get(Task, self.coordinator.context()['task_id'])
+            task.rounds, task.max_rounds = 500, 5
+            task.state = 'complete'
+        self.submit()
+        self.assertEqual(self.coordinator.context()['rounds'], 501)
+        self.assertIsNone(self.coordinator.context()['max_rounds'])
+        self.review('changes_requested')
+        self.submit('another-candidate')
+        self.assertEqual(self.coordinator.context()['rounds'], 502)
+
+    def test_rereview_is_on_demand_and_invalidates_prior_human_approval(self):
+        self.submit()
+        self.review()
+        self.approve()
+        request = self.coordinator.create_delegation('reviewer', 'second-review', 'Inspect again',
+                                                     self.coordinator.context()['version'])
+        with self.assertRaises(Conflict):
+            self.request_qa()
+        self.coordinator.claim(request['id'])
+        child = Coordinator(self.store, request['child_id'], request['id'])
+        child.stage_result('approved', 'New independent assessment', [], [])
+        self.coordinator.finish(request['id'], True)
+        self.assertEqual(self.coordinator.context()['state'], 'awaiting_human_approval')
+        with self.assertRaises(Conflict):
+            self.request_qa()
+        self.approve('approval-2')
+        self.assertEqual(self.coordinator.context()['state'], 'approved_for_qa')
+
+    def test_new_source_and_reopen_invalidate_human_approval(self):
+        self.submit()
+        self.review()
+        approval = self.approve()
+        self.assertEqual(self.approve(), approval)
+        self.coordinator.reopen(self.coordinator.context()['version'])
+        self.assertIsNone(self.coordinator.context()['human_decision'])
+        self.submit('new-source')
+        self.assertIsNone(self.coordinator.context()['human_decision'])
+        with self.assertRaises(Conflict):
+            self.request_qa()
+
+    def test_operator_decisions_reject_stale_versions_candidates_and_duplicate_keys(self):
+        self.submit()
+        self.review()
+        context = self.coordinator.context()
+        with self.operator_terminal():
+            for candidate, version in [('different', context['version']), (context['candidate_id'], -1)]:
+                with self.assertRaises(Conflict):
+                    self.coordinator.human_decision(candidate, 'approved', 'operator', 'Reviewed', 'human', version)
+            rejected = self.coordinator.human_decision(context['candidate_id'], 'rejected',
+                'operator', 'Needs changes', 'human', context['version'])
+            self.assertEqual(rejected['state'], 'developing')
+            with self.assertRaises(Conflict):
+                self.coordinator.human_decision(context['candidate_id'], 'approved',
+                    'operator', 'Reviewed', 'human', self.coordinator.context()['version'])
+
+    def test_agent_qa_and_parallel_requests_never_prepare_or_launch_native_processes(self):
+        self.submit()
+        bridge = Bridge(self.store, self.actor, 'codex')
+        self.assertEqual(bridge.tools['delegate']['inputSchema']['properties']['profile']['enum'], ['reviewer'])
+        self.assertNotIn('approve', bridge.tools)
+        with patch('orbehelm.delegation_runner.require_server') as ready, patch('orbehelm.delegation_runner.launch') as launch:
+            for role in ['qa', 'parallel']:
+                with self.assertRaises(OrbeHelmError):
+                    bridge.call('delegate', {'profile': role, 'key': 'bad', 'instructions': 'No',
+                                            'expected_version': self.coordinator.context()['version']})
+            ready.assert_not_called()
+            launch.assert_not_called()
+        self.assertEqual(self.coordinator.context()['delegations'], [])
+
+    def test_operator_actions_are_unavailable_through_an_agent_environment(self):
+        self.submit()
+        self.review()
+        context = self.coordinator.context()
+        with patch.dict(os.environ, {'ORBEHELM_ORBE_ID': 'bound-agent'}):
+            with self.assertRaises(OrbeHelmError):
+                self.coordinator.human_decision(context['candidate_id'], 'approved', 'operator', 'No', 'no', context['version'])
+            with self.assertRaises(OrbeHelmError), patch('orbehelm.delegation_runner.launch') as launch:
+                execute_operator_qa(self.coordinator, 'codex', context['candidate_id'], 'qa', 'No', context['version'])
+            launch.assert_not_called()
+
+    def test_operator_cli_records_approval_then_launches_qa_only_on_explicit_command(self):
+        self.submit()
+        self.review()
+        context = self.coordinator.context()
+        data = self.root / 'operator.json'
+        common = ['--root', str(self.root), '--project', str(self.work), '--actor', self.actor,
+                  '--data-file', str(data)]
+        data.write_text(json.dumps({'candidate_id': context['candidate_id'], 'expected_version': context['version'],
+            'key': 'operator-approval', 'operator': 'fixture-human', 'summary': 'Reviewed candidate'}))
+        with self.operator_terminal(), contextlib.redirect_stdout(io.StringIO()):
+            with patch('orbehelm.product.coordination_commands.execute_operator_qa') as qa:
+                self.assertEqual(main(['tasks', 'approve', *common]), 0)
+                qa.assert_not_called()
+            context = self.coordinator.context()
+            data.write_text(json.dumps({'candidate_id': context['candidate_id'], 'expected_version': context['version'],
+                'key': 'operator-qa', 'instructions': 'Run acceptance checks'}))
+            with self.fake_native():
+                self.assertEqual(main(['tasks', 'qa', '--agent', 'codex', *common]), 0)
+        self.assertEqual(self.coordinator.context()['state'], 'complete')
+
+    def test_one_active_assessment_and_qa_retry_identity(self):
+        self.submit()
+        request = self.coordinator.create_delegation('reviewer', 'first', 'Review', self.coordinator.context()['version'])
+        with self.assertRaises(Conflict):
+            self.coordinator.create_delegation('reviewer', 'second', 'Review', self.coordinator.context()['version'])
+        with self.assertRaises(Conflict):
+            self.submit('new-while-active')
+        self.coordinator.claim(request['id'])
+        Coordinator(self.store, request['child_id'], request['id']).stage_result('approved', 'Approved', [], [])
+        self.coordinator.finish(request['id'], True)
+        self.approve()
+        qa = self.request_qa()
+        self.assertEqual(self.request_qa()['id'], qa['id'])
+        with self.assertRaises(Conflict):
+            self.request_qa('second-qa')
+        with self.assertRaises(Conflict):
+            self.coordinator.create_delegation('reviewer', 'during-qa', 'Review', self.coordinator.context()['version'])
+
+    def test_legacy_qa_receipts_do_not_create_human_approval(self):
+        self.submit()
+        self.review()
+        # Model an old queued QA delegation copied from a pre-upgrade installation.
+        with self.store.write() as db:
+            actor = LogicalOrbe(id='legacy-qa', task_id=self.coordinator.context()['task_id'],
+                profile='qa', specialization='', orbe_key='legacy', parent_id=self.actor)
+            db.add(actor)
+            db.flush()
+            review = db.scalars(select(Delegation).where(Delegation.profile == 'reviewer')).first()
+            db.add(Delegation(id='legacy-request', task_id=review.task_id, parent_id=self.actor,
+                child_id=actor.id, candidate_id=review.candidate_id, context_id=review.context_id,
+                profile='qa', key='legacy', instructions='Run tests'))
+        with self.operator_terminal(), self.assertRaises(Conflict):
+            self.coordinator.request_qa(self.coordinator.context()['candidate_id'], 'legacy', 'Run tests',
+                                        self.coordinator.context()['version'])
+
+    def test_task_cli_dry_run_does_not_execute_qa(self):
+        with patch('orbehelm.product.coordination_commands.execute_operator_qa') as qa:
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(main(['tasks', 'qa', '--root', str(self.root), '--project', str(self.work),
+                                       '--actor', self.actor, '--dry-run']), 2)
+            qa.assert_not_called()
+
+    def test_fix_revision_invalidates_old_approvals_and_has_no_lifetime_limit(self):
         self.submit()
         reviewed = self.review('changes_requested')
         old_candidate = reviewed['candidate_id']
         self.assertEqual(self.coordinator.context()['state'], 'developing')
         self.submit('candidate-2')
         self.assertNotEqual(self.coordinator.context()['candidate_id'], old_candidate)
-        # A new candidate has no inherited gate results, even though QA may now start immediately.
+        # A new candidate has no inherited reviewer or human approval.
         self.assertEqual(self.coordinator.context()['state'], 'awaiting_review')
         stale = Coordinator(self.store, reviewed['child_id'], reviewed['id'])
         with self.assertRaises(Conflict):
@@ -288,8 +455,8 @@ class CoordinationTests(unittest.TestCase):
         self.review('changes_requested')
         self.submit('candidate-3')
         self.review('changes_requested')
-        with self.assertRaises(Conflict):
-            self.submit('candidate-4')
+        self.submit('candidate-4')
+        self.assertIsNone(self.coordinator.context()['submission_limit'])
 
     def test_child_knowledge_snapshot_survives_later_project_knowledge_updates(self):
         old = self.coordinator.save_knowledge('policy', 'Version one', 'project', 0, kind='decision', evidence=['fixture:revision-1'])
@@ -309,7 +476,10 @@ class CoordinationTests(unittest.TestCase):
             reviewed = execute_delegation(self.coordinator, 'codex', 'reviewer', 'review', 'Inspect', self.coordinator.context()['version'])
             self.assertEqual(reviewed['status'], 'completed')
             self.assertEqual(reviewed['result']['status'], 'approved')
-            tested = execute_delegation(self.coordinator, 'codex', 'qa', 'qa', 'Check acceptance', self.coordinator.context()['version'])
+            self.approve()
+            with self.operator_terminal():
+                tested = execute_operator_qa(self.coordinator, 'codex', self.coordinator.context()['candidate_id'],
+                    'qa', 'Check acceptance', self.coordinator.context()['version'])
         self.assertEqual(tested['result']['status'], 'passed')
         self.assertEqual(self.coordinator.context()['state'], 'complete')
         self.assertEqual((self.work / 'app.py').read_text(), 'value = 1\n')

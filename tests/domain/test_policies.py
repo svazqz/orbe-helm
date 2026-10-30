@@ -73,15 +73,19 @@ class CompositionTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
-    def test_review_precedes_qa_for_every_state(self):
-        for state in ['developing', 'blocked', 'awaiting_review', 'reviewing', 'reviewed', 'testing', 'complete']:
-            for profile in ['reviewer', 'qa']:
-                if state in {'awaiting_review', 'reviewing', 'reviewed', 'testing', 'assessing'}:
-                    require_delegation(profile, state, 'candidate')
-                else:
-                    with self.assertRaises(Conflict):
-                        require_delegation(profile, state, 'candidate')
-        self.assertEqual(completed_state('approved'), 'reviewed')
+    def test_reviewer_on_demand_and_qa_is_operator_only(self):
+        allowed = {'developing', 'blocked', 'awaiting_review', 'reviewed',
+                   'awaiting_human_approval', 'approved_for_qa', 'complete'}
+        for state in allowed | {'reviewing', 'testing', 'assessing'}:
+            if state in allowed:
+                require_delegation('reviewer', state, 'candidate')
+            else:
+                with self.assertRaises(Conflict):
+                    require_delegation('reviewer', state, 'candidate')
+            for role in ['qa', 'parallel']:
+                with self.assertRaises(OrbeHelmError):
+                    require_delegation(role, state, 'candidate')
+        self.assertEqual(completed_state('approved'), 'awaiting_human_approval')
         self.assertEqual(completed_state('passed'), 'complete')
 
     def test_owner_and_compare_and_swap_checks(self):
@@ -97,16 +101,15 @@ class WorkflowTests(unittest.TestCase):
                 require_version(1, expected)
         require_version(1, 1)
 
-    def test_bounded_submissions_and_explicit_recovery(self):
+    def test_unlimited_submissions_and_explicit_recovery(self):
         rng = random.Random(4242)
         for _ in range(100):
             limit = rng.randint(1, 100)
             require_submission('developing', limit - 1, limit, False)
-            with self.assertRaises(Conflict):
-                require_submission('developing', limit, limit, False)
+            require_submission('developing', limit + 100, limit, False)
         with self.assertRaises(Conflict):
             require_submission('blocked', 0, 3, True)
-        require_reopen('complete', 3, 4, False)
+        require_reopen('complete', 300, None, False)
         with self.assertRaises(OrbeHelmError):
             require_reopen('complete', 3, 3, False)
         for value in ['a//b', '../a', 'a/..', '/a']:

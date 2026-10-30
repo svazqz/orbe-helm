@@ -2,7 +2,6 @@
 import os
 import shutil
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
 
 from .core import OrbeHelmError, digest
 from .adapters import launch
@@ -23,10 +22,19 @@ def delegation_result(coordinator, record):
 
 
 def execute_delegation(coordinator, agent, profile, key, instructions, expected_version, cancel=None, timeout=300):
-    if profile == 'parallel':
-        return execute_assessments(coordinator, agent, key, instructions, expected_version, cancel, timeout)
-    require_server(coordinator.store.root)
+    # Validate workflow authority before service preparation or native execution.
     record = coordinator.create_delegation(profile, key, instructions, expected_version)
+    return execute_request(coordinator, agent, record, cancel, timeout)
+
+
+def execute_operator_qa(coordinator, agent, candidate_id, key, instructions, expected_version, cancel=None, timeout=300):
+    record = coordinator.request_qa(candidate_id, key, instructions, expected_version)
+    return execute_request(coordinator, agent, record, cancel, timeout)
+
+
+def execute_request(coordinator, agent, record, cancel=None, timeout=300):
+    """Run a reserved request; launch authority was checked when reserving it."""
+    profile = record['profile']
     if record['status'] != 'queued':
         return delegation_result(coordinator, record)
     try:
@@ -38,6 +46,7 @@ def execute_delegation(coordinator, agent, profile, key, instructions, expected_
             return delegation_result(coordinator, coordinator._delegation_dict(current))
     store = coordinator.store
     try:
+        require_server(store.root)
         with store.read() as db:
             item = db.get(Delegation, record['id'])
             task = db.get(Task, item.task_id)
@@ -72,7 +81,7 @@ def execute_delegation(coordinator, agent, profile, key, instructions, expected_
                   'For external artifact_refs, use your profile MCPs to inspect the exact pinned revision; '
                   'a URL alone does not establish that revision. Report blocked if it cannot be verified. '
                   'Do not change submitted source files. You must call the orbehelm complete_delegation tool '
-                  'with a structured result before exiting. Request: ' + instructions)
+                  'with a structured result before exiting. Request: ' + item.instructions)
         from .memory_runtime import native_session
         code = launch(store.root, output, resolved, agent, prompt=prompt,
             unique_key=child.orbe_key, actor_id=child.id, delegation_id=item.id,
@@ -97,19 +106,7 @@ def execute_delegation(coordinator, agent, profile, key, instructions, expected_
 
 
 def execute_assessments(coordinator, agent, key, instructions, expected_version, cancel=None, timeout=300):
-    """Queue both gates before executing either, retaining individual retry identity."""
-    gates = coordinator.create_assessments(key, instructions, expected_version)
-    candidate = gates['reviewer']['candidate_id']
-    results = {}
-    with ThreadPoolExecutor(max_workers=2, thread_name_prefix='orbehelm-assessment') as pool:
-        futures = {role: pool.submit(execute_delegation, coordinator, agent, role, key,
-                    instructions, expected_version, cancel, timeout) for role in ('reviewer', 'qa')}
-        for role, future in futures.items():
-            try:
-                results[role] = future.result()
-            except (OrbeHelmError, OSError, ValueError) as error:
-                results[role] = {'status': 'failed', 'error': str(error)}
-    return {'candidate_id': candidate, 'assessments': results, 'state': coordinator.context()['state']}
+    raise OrbeHelmError('Parallel assessments are no longer supported; request reviewer only')
 
 
 def recover_delegation(coordinator, delegation_id, confirm_stopped=False):

@@ -12,7 +12,7 @@ class Task:
     version: int = 0
     candidate_id: str | None = None
     rounds: int = 0
-    max_rounds: int = 3
+    max_rounds: int | None = None
 
 
 @dataclass(frozen=True)

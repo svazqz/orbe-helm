@@ -38,7 +38,7 @@ def catalog_release(row):
 
 def task(row):
     return Task(row.id, row.project_id, row.owner_id, row.state, row.version,
-                row.candidate_id, row.rounds, row.max_rounds)
+                row.candidate_id, row.rounds, None)
 
 
 def workflow_actor(row):

@@ -1,9 +1,9 @@
 # OrbeHelm Alpha
 
 Current workflow: [persistent workstreams, isolated role/spec contexts, typed knowledge,
-full-access execution and parallel review/QA](docs/persistent-workflows.md).
+full-access execution and human-controlled review/QA](docs/persistent-workflows.md).
 
-Current alpha release: **v0.1.0-alpha.5** (`0.1.0a5`). See the
+Current source candidate: **v0.1.0-alpha.5** (`0.1.0a5`); published release: **v0.1.0-alpha.4**. See the
 [changelog](CHANGELOG.md) and [release/tag policy](docs/releases.md).
 
 OrbeHelm composes reusable agent definitions and manages project configuration,
@@ -107,7 +107,9 @@ builds and one-shot delegation remain available. `--new-session` retains the orb
 Native homes, transcripts, and prior launch records are preserved.
 
 `--unique-key` selects a separate workstream. Default unkeyed memory-enabled sessions
-also support immutable candidate submission and parallel reviewer/QA delegation.
+also support unlimited immutable candidate submissions and reviewer delegation.
+Reviewer approval stops for human review; QA launches only through an explicit
+operator CLI command.
 See [task orchestration](docs/task-orchestration.md). Running
 work and submitted reviewer/QA candidates retain their captured configuration.
 

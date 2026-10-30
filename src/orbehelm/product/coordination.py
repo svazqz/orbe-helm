@@ -222,12 +222,18 @@ class Coordinator:
             result = {'task_id': task.id, 'project_id': task.project_id, 'unique_key': task.unique_key,
                 'logical_orbe_id': actor.id, 'orbe_key': actor.orbe_key, 'profile': actor.profile,
                 'parent_id': actor.parent_id, 'workspace': task.workspace, 'state': task.state,
-                'version': task.version, 'rounds': task.rounds, 'max_rounds': task.max_rounds,
+                'version': task.version, 'rounds': task.rounds, 'max_rounds': None,
+                'submission_count': task.rounds, 'submission_limit': None,
                 'candidate_id': candidate_id, 'knowledge': facts,
                 'delegations': [self._delegation_dict(item) for item in delegations]}
             if candidate_id:
                 candidate = db.get(TaskArtifact, candidate_id)
                 result['candidate'] = self._read(db, task, candidate)['data']
+                result['human_decision'] = self._human_decision(db, task)
+            result['next_action'] = {'awaiting_review': 'developer_request_reviewer',
+                'awaiting_human_approval': 'operator_review', 'approved_for_qa': 'operator_launch_qa',
+                'reviewing': 'wait_for_reviewer', 'testing': 'wait_for_qa',
+                'complete': 'none'}.get(task.state, 'developer_action')
             if binding:
                 result['request'] = self._delegation_dict(binding) | {'instructions': binding.instructions}
             events = db.scalars(select(TaskEvent).where(TaskEvent.task_id == task.id)
@@ -350,31 +356,111 @@ class Coordinator:
             return self._create_delegation(db, profile, key, instructions, expected_version)
 
     def create_assessments(self, key, instructions, expected_version):
-        """Reserve both candidate gates atomically; a conflict rolls back both."""
-        with product_lock(self.store.root), self.store.write() as db:
-            reviewer = self._create_delegation(db, 'reviewer', key, instructions, expected_version)
-            _, task = self._scope(db)
-            qa = self._create_delegation(db, 'qa', key, instructions, task.version)
-            return {'reviewer': reviewer, 'qa': qa}
+        raise OrbeHelmError('Parallel assessments are no longer supported; request reviewer only')
 
-    def _create_delegation(self, db, profile, key, instructions, expected_version):
-        if profile not in RESULTS:
-            raise OrbeHelmError('Only reviewer and QA child profiles are supported')
+    @staticmethod
+    def _operator():
+        # Same boundary as operator memory maintenance, not OS-account isolation.
+        if os.environ.get('ORBEHELM_ORBE_ID') or os.environ.get('ORBEHELM_MEMORY_BINDING'):
+            raise OrbeHelmError('Human decisions and QA launch require an operator terminal outside an agent session')
+
+    def _human_decision(self, db, task):
+        event = db.scalars(select(TaskEvent).where(TaskEvent.task_id == task.id,
+            TaskEvent.kind.in_(['human.decision', 'task.reopened']))
+            .order_by(TaskEvent.sequence.desc())).first()
+        if not event or event.kind != 'human.decision' or event.payload['candidate_id'] != task.candidate_id:
+            return None
+        artifact = db.get(TaskArtifact, event.payload['artifact_id'])
+        return {'artifact_id': artifact.id, **self._read(db, task, artifact)['data']}
+
+    def _latest_review(self, db, task):
+        event = db.scalars(select(TaskEvent).where(TaskEvent.task_id == task.id,
+            TaskEvent.kind == 'delegation.created').order_by(TaskEvent.sequence.desc())).all()
+        for entry in event:
+            item = db.get(Delegation, entry.payload['delegation_id'])
+            if item.candidate_id == task.candidate_id and item.profile == 'reviewer':
+                return item
+        return None
+
+    def human_decision(self, candidate_id, decision, operator, summary, key, expected_version):
+        """Record an explicit local operator attestation; never exposed as MCP."""
+        self._operator()
+        if decision not in {'approved', 'rejected'}:
+            raise OrbeHelmError('Human decision must be approved or rejected')
+        unique_key(key)
+        text_value(operator, 'Operator identity', 256)
+        text_value(summary, 'Human review summary')
+        with product_lock(self.store.root), self.store.write() as db:
+            actor, task = self._scope(db)
+            self._developer(actor, task)
+            old = db.scalars(select(TaskArtifact).where(TaskArtifact.task_id == task.id,
+                TaskArtifact.kind == 'human_decision')).all()
+            for artifact in old:
+                data = self._read(db, task, artifact)['data']
+                if data['key'] == key:
+                    if any(data[name] != value for name, value in [('candidate_id', candidate_id),
+                            ('decision', decision), ('operator', operator), ('summary', summary)]):
+                        raise Conflict('Human decision key already identifies different content')
+                    return {'artifact_id': artifact.id, 'state': task.state, 'version': task.version}
+            self._version(task, expected_version)
+            if task.candidate_id != candidate_id or task.state not in {'awaiting_human_approval', 'approved_for_qa'}:
+                raise Conflict('Human review requires the current reviewer-approved candidate')
+            review = self._latest_review(db, task)
+            if not review or review.status != 'completed' or not review.result_id:
+                raise Conflict('A completed reviewer approval is required')
+            result = self._read(db, task, db.get(TaskArtifact, review.result_id))['data']
+            if result['status'] != 'approved':
+                raise Conflict('A completed reviewer approval is required')
+            candidate = self._read(db, task, db.get(TaskArtifact, candidate_id))['data']
+            receipt = self._artifact(db, task, 'human_decision', {'candidate_id': candidate_id,
+                'source_digest': candidate['source_digest'], 'review_result_id': review.result_id,
+                'decision': decision, 'operator': operator, 'summary': summary, 'key': key, 'recorded_at': now()})
+            task.state = 'approved_for_qa' if decision == 'approved' else 'developing'
+            self._event(db, task, 'human.decision', {'candidate_id': candidate_id, 'artifact_id': receipt.id})
+            return {'artifact_id': receipt.id, 'state': task.state, 'version': task.version}
+
+    def request_qa(self, candidate_id, key, instructions, expected_version):
+        self._operator()
+        with product_lock(self.store.root), self.store.write() as db:
+            return self._create_delegation(db, 'qa', key, instructions, expected_version,
+                                           operator_candidate=candidate_id)
+
+    def _create_delegation(self, db, profile, key, instructions, expected_version, operator_candidate=None):
+        if profile != 'reviewer' and not (profile == 'qa' and operator_candidate is not None):
+            raise OrbeHelmError('Developers may request reviewer only; QA requires the operator tasks qa command')
         unique_key(key)
         text_value(instructions, 'Delegation instructions')
         actor, task = self._scope(db)
         self._developer(actor, task)
+        if operator_candidate is not None and operator_candidate != task.candidate_id:
+            raise Conflict('QA must target the current human-approved candidate')
         existing = db.scalars(select(Delegation).where(Delegation.parent_id == actor.id,
             Delegation.profile == profile, Delegation.key == key,
             Delegation.candidate_id == task.candidate_id)).first()
         if existing:
             if existing.instructions != instructions:
                 raise Conflict('Delegation key already has different instructions')
+            if profile == 'qa' and existing.status == 'queued':
+                approval = self._human_decision(db, task)
+                review = self._latest_review(db, task)
+                frozen = self._read(db, task, db.get(TaskArtifact, existing.context_id))['data']
+                if (not approval or approval['decision'] != 'approved' or not review
+                        or review.status != 'completed' or review.result_id != approval['review_result_id']
+                        or frozen.get('human_approval_id') != approval['artifact_id']
+                        or task.state not in {'testing', 'approved_for_qa'}):
+                    raise Conflict('Queued QA has no current human approval; inspect and recover the old request')
             return self._delegation_dict(existing)
         self._version(task, expected_version)
-        require_delegation(profile, task.state, task.candidate_id)
+        approval = None
+        if profile == 'reviewer':
+            require_delegation(profile, task.state, task.candidate_id)
+        else:
+            approval = self._human_decision(db, task)
+            review = self._latest_review(db, task)
+            if (task.state != 'approved_for_qa' or not approval or approval['decision'] != 'approved'
+                    or not review or review.status != 'completed' or review.result_id != approval['review_result_id']):
+                raise Conflict('QA requires explicit human approval of the current reviewed candidate')
         active = db.scalar(select(Delegation.id).where(Delegation.task_id == task.id,
-            Delegation.candidate_id == task.candidate_id, Delegation.profile == profile,
             Delegation.status.in_(['queued', 'running', 'result_pending'])))
         if active:
             raise Conflict('This candidate already has an active ' + profile + ' assessment')
@@ -402,12 +488,13 @@ class Coordinator:
                 seen.add(identity)
         frozen = self._artifact(db, task, 'context', {'candidate_id': task.candidate_id,
             'task_version': task.version, 'instructions': instructions, 'knowledge': facts,
+            'human_approval_id': approval['artifact_id'] if approval else None,
             'knowledge_artifacts': [fact['artifact_id'] for fact in facts]})
         item = Delegation(task_id=task.id, parent_id=actor.id, child_id=child_id,
             candidate_id=task.candidate_id, context_id=frozen.id, profile=profile, key=key, instructions=instructions)
         db.add(item)
         db.flush()
-        task.state = 'assessing'
+        task.state = 'reviewing' if profile == 'reviewer' else 'testing'
         self._event(db, task, 'delegation.created', {'delegation_id': item.id, 'child_id': child_id})
         return self._delegation_dict(item)
 
@@ -454,9 +541,19 @@ class Coordinator:
 
     def _refresh_assessments(self, db, task):
         gates, pending, missing_knowledge = {}, False, False
+        review = self._latest_review(db, task)
+        approval = self._human_decision(db, task)
+        approved = bool(approval and approval['decision'] == 'approved' and review
+                        and review.status == 'completed' and review.result_id == approval['review_result_id'])
         records = db.scalars(select(Delegation).where(Delegation.task_id == task.id,
             Delegation.candidate_id == task.candidate_id).order_by(Delegation.created_at, Delegation.id)).all()
         for gate in records:
+            if gate.profile == 'reviewer' and (not review or gate.id != review.id):
+                continue
+            if gate.profile == 'qa':
+                frozen = self._read(db, task, db.get(TaskArtifact, gate.context_id))['data']
+                if not approved or frozen.get('human_approval_id') != approval['artifact_id']:
+                    continue
             pending |= gate.status in {'queued', 'running', 'result_pending'}
             if gate.status == 'completed' and gate.result_id:
                 payload = self._read(db, task, db.get(TaskArtifact, gate.result_id))['data']
@@ -466,7 +563,9 @@ class Coordinator:
                     MemorySource.source_id == 'assessment:' + gate.id)) is None
             elif gate.status in {'failed', 'cancelled', 'interrupted'}:
                 gates[gate.profile] = 'blocked'
-        task.state = assessment_state(gates, pending)
+        task.state = assessment_state(gates, pending, human_approved=approved)
+        if pending:
+            task.state = 'testing' if approved else 'reviewing'
         if missing_knowledge and not pending:
             task.state = 'persistence_pending'
 
@@ -564,9 +663,7 @@ class Coordinator:
             if db.scalar(select(Delegation.id).where(Delegation.task_id == task.id,
                          Delegation.status.in_(['queued', 'running', 'result_pending']))):
                 raise Conflict('A pending delegation must be resolved first')
-            if round_limit is not None:
-                require_reopen(task.state, task.rounds, round_limit, False)
-                task.max_rounds = round_limit
+            require_reopen(task.state, task.rounds, round_limit, False)
             task.state = 'developing'
             self._event(db, task, 'task.reopened', {})
             return {'state': task.state, 'version': task.version}

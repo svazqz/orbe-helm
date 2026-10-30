@@ -14,7 +14,7 @@ import test_coordination as fixtures
 from sqlalchemy import select
 from orbehelm.adapters import command, child_command, launch_environment, orbe_identity, launch
 from orbehelm.conversations import conversation, append, bootstrap
-from orbehelm.delegation_runner import execute_delegation
+from orbehelm.delegation_runner import execute_delegation, execute_operator_qa
 from orbehelm.domain.shared.errors import Conflict, Forbidden, OrbeHelmError
 from orbehelm.domain.coordination.policies import assessment_state
 from orbehelm.memory import repository, bind
@@ -214,7 +214,9 @@ class PersistentWorkflowTests(unittest.TestCase):
 
     def test_assessment_persistence_failure_retains_receipt_and_retries_without_model(self):
         self.f.submit()
-        gate = self.f.coordinator.create_delegation('qa', 'qa-report', 'Test candidate', self.f.coordinator.context()['version'])
+        self.f.review()
+        self.f.approve()
+        gate = self.f.request_qa('qa-report')
         self.f.coordinator.claim(gate['id'])
         Coordinator(self.f.store, gate['child_id'], gate['id']).stage_result('passed', 'Exact input checks passed.', [], [])
         with patch('orbehelm.infrastructure.memory.sqlite.SQLiteMemory.put', side_effect=OrbeHelmError('storage unavailable')):
@@ -222,10 +224,10 @@ class PersistentWorkflowTests(unittest.TestCase):
         self.assertEqual(first['knowledge_persistence'], 'pending')
         self.assertEqual(self.f.coordinator.context()['state'], 'persistence_pending')
         self.assertTrue(self.f.coordinator.read_artifact(first['result_id']))
-        with patch('orbehelm.delegation_runner.launch', side_effect=AssertionError('Must not rerun model')):
-            retried = execute_delegation(self.f.coordinator, 'codex', 'qa', 'qa-report', 'Test candidate', 0)
+        with self.f.operator_terminal(), patch('orbehelm.delegation_runner.launch', side_effect=AssertionError('Must not rerun model')):
+            retried = execute_operator_qa(self.f.coordinator, 'codex', gate['candidate_id'], 'qa-report', 'Run tests', 0)
         self.assertEqual(retried['knowledge_persistence'], 'saved')
-        self.assertEqual(self.f.coordinator.context()['state'], 'awaiting_review')
+        self.assertEqual(self.f.coordinator.context()['state'], 'complete')
 
     def test_assessment_knowledge_keeps_private_child_inputs_private(self):
         self.f.submit()
@@ -249,7 +251,9 @@ class PersistentWorkflowTests(unittest.TestCase):
 
     def test_large_assessment_reports_persist_granular_findings_before_receipt(self):
         self.f.submit()
-        gate = self.f.coordinator.create_delegation('qa', 'large-report', 'Assess candidate', self.f.coordinator.context()['version'])
+        self.f.review()
+        self.f.approve()
+        gate = self.f.request_qa('large-report')
         self.f.coordinator.claim(gate['id'])
         findings = [str(n) + ' ' + 'Finding evidence. ' * 400 for n in range(12)]
         Coordinator(self.f.store, gate['child_id'], gate['id']).stage_result('failed', 'Assessment summary.', findings, [])
@@ -261,26 +265,23 @@ class PersistentWorkflowTests(unittest.TestCase):
         again = self.f.coordinator.finish(gate['id'], True)
         self.assertEqual(result['knowledge_unit_id'], again['knowledge_unit_id'])
 
-    def test_failure_from_one_gate_cannot_be_overwritten_by_other_gate_pass(self):
+    def test_reviewer_failure_prevents_qa_and_cannot_be_overwritten_by_an_agent(self):
         self.f.submit()
-        gates = {role: self.f.coordinator.create_delegation(role, 'check', 'Check candidate', self.f.coordinator.context()['version'])
-                 for role in ['reviewer', 'qa']}
-        for role, verdict in [('reviewer', 'changes_requested'), ('qa', 'passed')]:
-            gate = gates[role]
-            self.f.coordinator.claim(gate['id'])
-            Coordinator(self.f.store, gate['child_id'], gate['id']).stage_result(verdict, 'Candidate assessment.', [], [])
-            self.f.coordinator.finish(gate['id'], True)
+        self.f.review('changes_requested')
+        with self.assertRaises(Conflict):
+            self.f.request_qa()
+        with self.assertRaises(OrbeHelmError):
+            self.f.coordinator.create_delegation('qa', 'check', 'Check candidate', self.f.coordinator.context()['version'])
         self.assertEqual(self.f.coordinator.context()['state'], 'developing')
 
-    def test_parallel_reservation_conflict_does_not_leave_a_partial_pair(self):
+    def test_parallel_reservation_is_rejected_without_partial_work(self):
         self.f.submit()
-        self.f.coordinator.create_delegation('qa', 'existing-qa', 'Check candidate', self.f.coordinator.context()['version'])
         version = self.f.coordinator.context()['version']
-        with self.assertRaises(Conflict):
+        with self.assertRaises(OrbeHelmError):
             self.f.coordinator.create_assessments('new-pair', 'Assess candidate', version)
         context = self.f.coordinator.context()
         self.assertEqual(context['version'], version)
-        self.assertEqual([item['profile'] for item in context['delegations']], ['qa'])
+        self.assertEqual(context['delegations'], [])
 
     def test_0005_upgrade_preserves_history_and_maps_specializations_without_merging(self):
         root = self.f.root / 'old-workflows'
@@ -333,36 +334,36 @@ class PersistentWorkflowTests(unittest.TestCase):
                 self.f.coordinator.submit_work([], 'Review a PR.', 'invalid', 0, 'Requirements.',
                     artifact_refs=[{**refs[0], 'revision': revision}])
 
-    def test_both_gate_completion_orders_require_same_candidate(self):
+    def test_review_and_qa_results_cannot_substitute_for_human_approval(self):
         self.assertEqual(assessment_state({'qa': 'passed'}), 'awaiting_review')
-        self.assertEqual(assessment_state({'qa': 'passed', 'reviewer': 'approved'}), 'complete')
-        self.assertEqual(assessment_state({'qa': 'failed', 'reviewer': 'approved'}), 'developing')
+        self.assertEqual(assessment_state({'qa': 'passed', 'reviewer': 'approved'}), 'awaiting_human_approval')
+        self.assertEqual(assessment_state({'qa': 'passed', 'reviewer': 'approved'}, human_approved=True), 'complete')
+        self.assertEqual(assessment_state({'qa': 'failed', 'reviewer': 'approved'}, human_approved=True), 'developing')
         self.f.submit()
-        gates = {role: self.f.coordinator.create_delegation(role, 'assessment', 'Check candidate', self.f.coordinator.context()['version'])
-                 for role in ['reviewer', 'qa']}
-        for role, verdict in [('qa', 'passed'), ('reviewer', 'approved')]:
-            gate = gates[role]
-            self.f.coordinator.claim(gate['id'])
-            Coordinator(self.f.store, gate['child_id'], gate['id']).stage_result(verdict, 'Checked exact candidate', [], [])
-            self.f.coordinator.finish(gate['id'], True)
-            self.assertEqual(self.f.coordinator.context()['state'], 'assessing' if role == 'qa' else 'complete')
+        with self.assertRaises(Conflict):
+            self.f.request_qa()
+        self.f.review()
+        self.assertEqual(self.f.coordinator.context()['state'], 'awaiting_human_approval')
+        with self.assertRaises(Conflict):
+            self.f.request_qa()
+        self.f.approve()
+        self.assertEqual(self.f.coordinator.context()['state'], 'approved_for_qa')
 
-    def test_parallel_runner_uses_two_isolated_workspaces_and_idempotent_gates(self):
+    def test_sequential_runner_uses_distinct_workspaces_and_idempotent_requests(self):
         self.f.submit()
         version = self.f.coordinator.context()['version']
-        rendezvous = threading.Barrier(2, timeout=10)
-        from orbehelm import delegation_runner
-        original = delegation_runner.launch
-        def simultaneous(*args, **kwargs):
-            rendezvous.wait()
-            return original(*args, **kwargs)
-        with self.f.fake_native(), patch('orbehelm.delegation_runner.launch', side_effect=simultaneous):
-            result = execute_delegation(self.f.coordinator, 'codex', 'parallel', 'round-1', 'Assess exact inputs', version)
-        self.assertEqual(result['state'], 'complete', result)
-        self.assertEqual({item['status'] for item in result['assessments'].values()}, {'completed'})
-        with patch('orbehelm.delegation_runner.launch', side_effect=AssertionError('Duplicate launch')):
-            again = execute_delegation(self.f.coordinator, 'codex', 'parallel', 'round-1', 'Assess exact inputs', version)
-        self.assertEqual(result, again)
+        with self.f.fake_native():
+            review = execute_delegation(self.f.coordinator, 'codex', 'reviewer', 'review', 'Inspect', version)
+            self.assertEqual(self.f.coordinator.context()['state'], 'awaiting_human_approval')
+            self.assertEqual(len(self.f.coordinator.context()['delegations']), 1)
+            self.f.approve()
+            with self.f.operator_terminal():
+                qa = execute_operator_qa(self.f.coordinator, 'codex', review['candidate_id'], 'qa',
+                    'Run tests', self.f.coordinator.context()['version'])
+        self.assertEqual(self.f.coordinator.context()['state'], 'complete')
+        with self.f.operator_terminal(), patch('orbehelm.delegation_runner.launch', side_effect=AssertionError('Duplicate launch')):
+            again = execute_operator_qa(self.f.coordinator, 'codex', review['candidate_id'], 'qa', 'Run tests', 0)
+        self.assertEqual(qa, again)
         with self.f.store.read() as db:
             gates = db.scalars(select(Delegation)).all()
             self.assertEqual(len(gates), 2)

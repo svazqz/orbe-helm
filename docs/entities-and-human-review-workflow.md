@@ -1,6 +1,6 @@
 # Entities and human-controlled review workflow
 
-Analysis date: 2026-10-30. This document distinguishes existing implementation from the proposed workflow. No runtime changes are implied by this document.
+Analysis date: 2026-10-30. This records the original analysis. The subsequent engine implementation now enforces unlimited submissions, reviewer handoff, human decisions and operator-only QA. See [current task workflow](task-orchestration.md). Reviewer specialization inheritance remains planned; descriptions of the old parallel workflow below are historical.
 
 ## Existing entities
 

@@ -41,14 +41,14 @@ TOOLS = [
               'properties': {'uri': STRING, 'revision': STRING}, 'required': ['uri', 'revision'], 'additionalProperties': False}},
           'handoff': STRING, 'requirements': STRING, 'submission_key': STRING, 'expected_version': VERSION},
          ['paths', 'handoff', 'submission_key', 'expected_version', 'requirements']),
-    tool('delegate', 'Developer only: use profile parallel to run independent reviewer and QA assessments on the same frozen candidate. Individual gates are also supported. Starts native models with full execution privileges. Repeated keys do not duplicate work.',
-         {'profile': {'type': 'string', 'enum': ['reviewer', 'qa', 'parallel']}, 'key': STRING,
+    tool('delegate', 'Developer only: request a reviewer on demand for the frozen candidate. Review stops for human approval. QA is operator CLI only. Starts a native model with full execution privileges. Repeated keys do not duplicate work.',
+         {'profile': {'type': 'string', 'enum': ['reviewer']}, 'key': STRING,
           'instructions': STRING, 'expected_version': VERSION}, ['profile', 'key', 'instructions', 'expected_version']),
     tool('complete_delegation', 'Delegated child only: stage a result for the exact requested candidate. The runner verifies exit and input integrity before accepting it.',
          {'status': {'type': 'string', 'enum': ['approved', 'changes_requested', 'passed', 'failed', 'blocked']},
           'summary': STRING, 'findings': {'type': 'array', 'items': STRING, 'maxItems': 100},
           'evidence': {'type': 'array', 'items': STRING, 'maxItems': 100}}, ['status', 'summary', 'findings', 'evidence']),
-    tool('reopen_task', 'Developer only: explicitly reopen a blocked/completed task. Does not bypass pending delegations or submission limits.',
+    tool('reopen_task', 'Developer only: explicitly reopen a blocked/reviewed/completed task. Does not bypass pending delegations. Candidate submissions are unlimited.',
          {'expected_version': VERSION}, ['expected_version']),
 ]
 

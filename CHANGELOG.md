@@ -7,8 +7,12 @@
 - Clarify role-specific candidate submission, reviewer results and intended human
   review/manual operator QA handoffs; remove automatic parallel-QA prompt injection.
 - Document entities, operator configuration and the proposed sequential workflow.
-- Human approval state-machine enforcement and manual QA commands remain planned;
-  this release updates prompts without claiming those engine capabilities exist.
+- Remove lifetime submission limits, including historical task caps; reviewers can
+  be requested on demand while preserving concurrency and idempotency checks.
+- Stop reviewer approval at human review. Add operator-only `tasks approve`,
+  `tasks reject` and explicit `tasks qa`; remove agent QA/parallel delegation.
+- Bind human decisions to exact candidates and reviewer results; new source or
+  fresh review requires new approval. Existing task history is preserved.
 - No dependency or database migration; schema head remains `0006`.
 
 ## 0.1.0a4 — 2026-10-30

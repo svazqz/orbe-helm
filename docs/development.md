@@ -47,9 +47,9 @@ on operational data from an agent session.
    compatibility unless a migration is explicitly part of the task.
 4. Run focused tests, `fast`, then `check`. Update the current documentation and
    Unreleased changelog entry for observable behavior changes.
-5. Submit an immutable candidate through OrbeHelm coordination. Independent
-   reviewer/QA assessments must pass the same revision. Resubmit changed source;
-   earlier approvals do not apply to a new candidate. CI is an additional gate.
+5. Submit an immutable candidate through OrbeHelm coordination. Request a reviewer on demand for that revision, then stop for human review.
+   QA is a separate manual operator action after human approval. Resubmit changed
+   source without a lifetime cap; earlier approvals do not apply. CI is an additional gate.
 6. Merge after checks and review. Save focused typed outcomes with stable source IDs
    and artifact/revision evidence. A conversation reply is not accepted knowledge.
 

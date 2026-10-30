@@ -176,7 +176,8 @@ class Task(Base):
     version: Mapped[int] = mapped_column(default=0)
     candidate_id: Mapped[str | None]
     rounds: Mapped[int] = mapped_column(default=0)
-    max_rounds: Mapped[int] = mapped_column(default=3)
+    # Retained for old database compatibility, never enforced as a submission cap.
+    max_rounds: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[str] = mapped_column(default=now)
     __table_args__ = (UniqueConstraint('project_id', 'unique_key'),)
 

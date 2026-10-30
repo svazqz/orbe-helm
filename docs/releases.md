@@ -3,8 +3,8 @@
 Current package version: `0.1.0a5`; release tag: `v0.1.0-alpha.5`; schema head: `0006`.
 The permanent first-release tag `orbehelm-alpha` identifies `0.1.0a1` and must never move.
 
-Version 0.1.0a5 updates shared OrbeHelm methodology and role prompts. The human
-approval state machine and operator QA launch commands remain planned.
+Version 0.1.0a5 updates shared OrbeHelm methodology and role prompts. The working source now enforces unlimited candidate submissions, reviewer handoff,
+recorded human approval and operator-only manual QA.
 
 Version 0.1.0a4 resolves the Python 3.11 optional-memory installation limitation
 from alpha 3. The optional dependency lock and binary runtime are checked on both
@@ -18,8 +18,10 @@ Python 3.11 and 3.13 on Linux/macOS. Model downloads remain opt-in.
    this verifies tests/quality/coverage and prepares wheel, source archive and checksums.
 3. Run `scripts/check_release.py --clean --tag=VERSION_TAG` with the project Python.
    Version tags are `v1.2.3`, `v1.2.3-alpha.1`, `v1.2.3-beta.1` or `v1.2.3-rc.1`.
-4. Require reviewer and QA approvals on that same candidate plus passing CI. Record
-   installation/upgrade and relevant optional provider/model evidence separately.
+4. Request reviewer assessment of the exact candidate and stop for human review.
+   The operator records approval and manually requests release QA; never launch QA
+   automatically from an agent. Require that release evidence and passing CI before
+   publishing. Record installation/upgrade and optional integration evidence separately.
 5. Create/push an annotated tag only after operator authorization to publish the
    reviewed commit. Never move an existing published tag.
 

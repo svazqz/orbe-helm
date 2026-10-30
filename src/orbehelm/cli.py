@@ -45,7 +45,6 @@ def parser():
     p.add_argument('--configuration-id', help='pinned project configuration for the MCP runtime binding')
     p.add_argument('--data-file', help='JSON operation arguments file, or - for stdin')
     p.add_argument('--expected-version', type=int, help='expected task workflow version for reopening')
-    p.add_argument('--round-limit', type=int, help='operator-only submission limit when reopening a task')
     p.add_argument('--replace-id', help='accepted knowledge ID explicitly replaced by memory acceptance')
     p.add_argument('--confirm-stopped', action='store_true', help='operator confirms an uncertain native dispatch was stopped')
     p.add_argument("--dry-run", action="store_true", help="print only the planned launch command; do not create or modify files or start an agent")

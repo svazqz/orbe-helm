@@ -108,42 +108,20 @@ visibility and history but are excluded from new agent bindings. Explicitly crea
 typed, scoped copy to reuse suitable historical content. Legacy task knowledge also
 requires typed metadata before automatic cross-role handoff.
 
-## Parallel reviewer and QA
+## Reviewer, human review and manual QA
 
-Developer `submit_work` snapshots explicit inputs, requirements and handoff.
+Candidate submissions have no lifetime limit. Developer `submit_work` captures
+explicit source scope, acceptance criteria and a handoff. Remote references require
+pinned revisions and must be independently verified through available service tools.
 
-For a PR, document or other remote artifact, `submit_work` also accepts
-`artifact_refs: [{"uri": "https://host/path", "revision": "PINNED_REVISION"}]`;
-`paths` may be empty when references are supplied. URLs must not contain credentials
-or query secrets, and moving revision names such as HEAD/latest/main are rejected.
-Each assessor must verify the referenced revision through its own profile MCPs;
-reference validation alone does not fetch or authenticate against a remote system.
+`delegate` accepts `profile: reviewer` only. Reviewer approval stops the automated
+flow in `awaiting_human_approval`. An operator records human second review with
+`tasks approve` or `tasks reject`. Approval starts no model; only a later explicit
+operator `tasks qa` command launches QA against that exact candidate. New source or
+a fresh review invalidates prior human approval. Only one assessment may be active.
 
-Invoke `delegate` with the current version from `read_context`:
-
-```json
-{
-  "profile": "parallel",
-  "key": "APP-42:candidate-1:assessment-1",
-  "instructions": "Independently assess this candidate against its acceptance criteria and return evidence.",
-  "expected_version": 3
-}
-```
-
-Version `3` is illustrative. Operators can use `oh tasks delegate --project=...
---actor=... --data-file=./assessment.json --agent=codex`. This starts authenticated
-models, unlike a dry run. Reviewer/QA MCP credentials must already be configured;
-registration alone is not authentication.
-
-Both gates are queued before execution. They receive the same candidate/configuration,
-separate child identities, role definitions/MCP requirements and isolated materialized
-working copies. Inputs are verified after exit; modification prevents accepting the
-result. Snapshots must include everything needed for assessment. External dependencies
-and shared test resources are not automatically provisioned or isolated.
-
-Both required gates must pass the same candidate. A success cannot overwrite another
-gate's failure. New source requires a new candidate and new gates. Individual
-`reviewer` and `qa` dispatches remain available. The developer receives both reports.
+See [task orchestration](task-orchestration.md) for exact command/JSON examples,
+legacy-task compatibility and the local operator-attestation trust boundary.
 
 Completed report artifacts are durable outbox receipts for typed review/test knowledge.
 Failed writes expose `knowledge_persistence: pending` and `persistence_pending` task
